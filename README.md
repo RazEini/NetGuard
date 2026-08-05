@@ -22,7 +22,7 @@
   <hr>
 
   <h2 align="center">🔎 Overview</h2>
-  <p align="center" dir="rtl">
+  <p align="right" dir="rtl">
     <strong>NetGuard</strong> הוא כלי ניטור רשת (Sniffer) מתקדם שנועד לספק שקיפות מלאה לשכבות 3, 4 ו-7 במודל ה-OSI. 
     <br>
     בניגוד לסניפרים סטנדרטיים, הכלי משלב <strong>Sliding Window Heuristic Analysis</strong> לזיהוי מדויק של דפוסי תקיפה בזמן אמת (כמו DoS ו-Port Scanning) ומבצע ניתוח של שכבת האפליקציה (Application Layer) כדי לחשוף מידע רגיש בתעבורה.
@@ -88,8 +88,8 @@
   <hr>
 
   <div dir="rtl">
-  <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-  <ul>
+  <h2 align="right">🛠️ טכנולוגיות וארכיטקטורה</h2>
+  <ul align="right">
     <li><strong>Concurrency & Memory Safety:</strong> שימוש ב-<code>queue.Queue(maxsize=10000)</code> להפרדה בין הלכידה לניתוח, ומניעת זליגת זיכרון ב-Scapy בעזרת <code>store=0</code>.</li>
     <li><strong>Sliding Window Engine:</strong> שימוש ב-<code>collections.deque</code> ו-<code>defaultdict</code> לניהול מעקב זמנים מדויק בזמן אמת ללא איפוסי זיכרון מלאכותיים.</li>
     <li><strong>DPI Engine:</strong> ניתוח Bytes ישיר בשכבת ה-Raw Payload לזיהוי מחרוזות חשודות ויעילות בביצועים.</li>
