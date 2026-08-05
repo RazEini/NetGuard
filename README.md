@@ -4,7 +4,7 @@
 
   <p align="center">
     מנוע לניתוח תעבורת רשת בזמן אמת עם יכולות <strong>Deep Packet Inspection (DPI)</strong>, 
-    זיהוי אנומליות מבוסס היוריסטיקה (Heuristics) והתראות אבטחה מתקדמות.
+    זיהוי אנומליות מבוסס היוריסטיקה וחלון זמן נייד (Sliding Window), והתראות אבטחה מתקדמות.
     <br>
     מבוסס <strong>Python + Scapy</strong> בארכיטקטורת Multi-threaded.
   </p>
@@ -25,8 +25,8 @@
   <p align="center" dir="rtl">
     <strong>NetGuard</strong> הוא כלי ניטור רשת (Sniffer) מתקדם שנועד לספק שקיפות מלאה לשכבות 3, 4 ו-7 במודל ה-OSI. 
     <br>
-    בניגוד לסניפרים סטנדרטיים, הכלי משלב <strong>Heuristic Analysis</strong> לזיהוי דפוסי תקיפה (כמו DoS ו-Port Scanning) ומבצע פענוח של שכבת האפליקציה (Application Layer) בזמן אמת כדי לחשוף מידע רגיש בתעבורה לא מוצפנת.
-</p>
+    בניגוד לסניפרים סטנדרטיים, הכלי משלב <strong>Sliding Window Heuristic Analysis</strong> לזיהוי מדויק של דפוסי תקיפה בזמן אמת (כמו DoS ו-Port Scanning) ומבצע ניתוח של שכבת האפליקציה (Application Layer) כדי לחשוף מידע רגיש בתעבורה.
+  </p>
 
   <br>
 
@@ -52,33 +52,33 @@
       </tr>
       <tr>
         <td>🛡️ <strong>Cyber Security</strong></td>
-        <td>Anomaly Detection</td>
+        <td>Sliding-Window Anomaly Detection</td>
         <td>✅</td>
-        <td>זיהוי אוטומטי של מתקפות <strong>DoS (SYN Flood)</strong> וסריקת פורטים.</td>
+        <td>זיהוי <strong>DoS (SYN Flood)</strong> וסריקת פורטים מבוסס חלון זמן נייד (Sliding Window) מדויק.</td>
       </tr>
       <tr>
         <td>🔍 <strong>DPI</strong></td>
         <td>Deep Packet Inspection</td>
         <td>✅</td>
-        <td>פענוח Payload לטקסט קריא (UTF-8) וזיהוי תעבורת HTTP חשופה.</td>
+        <td>סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (בדיקות SQLi, Path Traversal וכו').</td>
       </tr>
       <tr>
         <td>⚙️ <strong>Architecture</strong></td>
         <td>Producer-Consumer Model</td>
         <td>✅</td>
-        <td>שימוש ב-<strong>Threading & Queue</strong> למניעת Packet Loss בעומסי תעבורה.</td>
+        <td>שימוש ב-<strong>Threading & Bounded Queue</strong> למניעת Packet Loss והצפת זיכרון.</td>
       </tr>
       <tr>
         <td>🚦 <strong>IPS Logic</strong></td>
         <td>Automatic Host Isolation</td>
         <td>✅</td>
-        <td>מנגנון לבידוד זמני של IP עוין לאחר זיהוי אנומליה.</td>
+        <td>מנגנון לבידוד זמני (Blacklisting) של IP עוין לאחר חריגה מהסף המוגדר.</td>
       </tr>
       <tr>
         <td>📝 <strong>Logging</strong></td>
-        <td>Security Event Journal</td>
+        <td>Dual-Stream Log Engine</td>
         <td>✅</td>
-        <td>רישום אירועים קריטיים לקובץ לוג ייעודי לצורך Forensic Analysis.</td>
+        <td>הפרדה בין פלט קונסולה צבעוני לבין כתיבת לוגים טקסטואליים נקיים ל-SIEM / Forensics.</td>
       </tr>
     </tbody>
   </table>
@@ -90,12 +90,24 @@
   <div dir="rtl">
   <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
   <ul>
-    <li><strong>Concurrency:</strong> שימוש ב-<code>threading</code> וב-<code>queue.Queue</code> להפרדה בין שלב הלכידה (Sniffing) לשלב הניתוח (Processing).</li>
-    <li><strong>DPI Engine:</strong> ניתוח שכבת ה-Raw Packet לחילוץ מחרוזות טקסטואליות וזיהוי דפוסי תקיפה.</li>
-    <li><strong>Security Heuristics:</strong> מנגנון מבוסס Thresholds לזיהוי הצפות (Flooding) וניסיונות גישה לא מורשים.</li>
-    <li><strong>Environment:</strong> פיתוח בסביבה מבודדת (venv) לניהול תלויות נקי.</li>
+    <li><strong>Concurrency & Memory Safety:</strong> שימוש ב-<code>queue.Queue(maxsize=10000)</code> להפרדה בין הלכידה לניתוח, ומניעת זליגת זיכרון ב-Scapy בעזרת <code>store=0</code>.</li>
+    <li><strong>Sliding Window Engine:</strong> שימוש ב-<code>collections.deque</code> ו-<code>defaultdict</code> לניהול מעקב זמנים מדויק בזמן אמת ללא איפוסי זיכרון מלאכותיים.</li>
+    <li><strong>DPI Engine:</strong> ניתוח Bytes ישיר בשכבת ה-Raw Payload לזיהוי מחרוזות חשודות ויעילות בביצועים.</li>
+    <li><strong>Clean Logging Strategy:</strong> פורמטר ייעודי (<code>ColoredConsoleFormatter</code>) לצביעת הודעות בקונסולה מבלי לזהם את קובצי הלוג בתווי ANSI.</li>
   </ul>
 </div>
+
+  <hr>
+
+  <h2>🖥️ דוגמת פלט (Console Output)</h2>
+  <div dir="ltr" align="left">
+    <pre>
+2026-08-06 01:50:10 [INFO] [DNS] Device 192.168.1.15 query: example.com
+2026-08-06 01:50:12 [WARNING] [PORT SCAN DETECTED] Host 10.0.0.4 scanned 18 unique ports
+2026-08-06 01:50:15 [CRITICAL] [DoS DETECTED] Isolating IP: 10.0.0.99 for 5 minutes
+2026-08-06 01:50:18 [WARNING] [SECURITY DPI] Suspicious keyword 'select * from' from 192.168.1.50
+    </pre>
+  </div>
 
   <hr>
 
@@ -109,11 +121,12 @@ cd python_sniffer
 ## Setup Virtual Environment
 python -m venv .venv
 .\.venv\Scripts\activate  # On Windows
+source .venv/bin/activate # On Linux/Mac
 
 ## Install Dependencies
 pip install scapy
 
-## Run as Administrator (Required for Raw Sockets)
+## Run as Administrator / Sudo (Required for Raw Sockets)
 python main.py
     </pre>
   </div>
