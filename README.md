@@ -1,8 +1,8 @@
 <div dir="rtl">
 
-  <h1 align="center">🕵️ NetGuard – Python Network Sniffer & DPI Engine</h1>
+  <h1 align="center">🕵️ NetGuard – Python Network Sniffer &amp; DPI Engine</h1>
 
-  <p align="center">
+  <p align="center" dir="rtl">
     מנוע לניתוח תעבורת רשת בזמן אמת עם יכולות <strong>Deep Packet Inspection (DPI)</strong>, 
     זיהוי אנומליות מבוסס היוריסטיקה וחלון זמן נייד (Sliding Window), והתראות אבטחה מתקדמות.
     <br>
@@ -22,7 +22,7 @@
   <hr>
 
   <h2 align="center">🔎 Overview</h2>
-  <p align="center" dir="rtl">
+  <p align="right" dir="rtl">
     <strong>NetGuard</strong> הוא כלי ניטור רשת (Sniffer) מתקדם שנועד לספק שקיפות מלאה לשכבות 3, 4 ו-7 במודל ה-OSI. 
     <br>
     בניגוד לסניפרים סטנדרטיים, הכלי משלב <strong>Sliding Window Heuristic Analysis</strong> לזיהוי מדויק של דפוסי תקיפה בזמן אמת (כמו DoS ו-Port Scanning) ומבצע ניתוח של שכבת האפליקציה (Application Layer) כדי לחשוף מידע רגיש בתעבורה.
@@ -34,51 +34,51 @@
 
   <h2 align="center">🚀 Core Features</h2>
 
-  <table align="center" dir="rtl">
+  <table align="center">
     <thead>
       <tr>
-        <th>Domain</th>
-        <th>Feature</th>
-        <th>Status</th>
-        <th>Description</th>
+        <th align="left">Domain</th>
+        <th align="left">Feature</th>
+        <th align="center">Status</th>
+        <th align="right">Description</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>📡 <strong>Network</strong></td>
-        <td>Real-time L2-L7 Sniffing</td>
-        <td>✅</td>
-        <td>לכידה וניתוח של תעבורת IP, TCP, UDP ו-DNS בזמן אמת.</td>
+        <td align="left">📡 <strong>Network</strong></td>
+        <td align="left">Real-time L2-L7 Sniffing</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">לכידה וניתוח של תעבורת IP, TCP, UDP ו-DNS בזמן אמת.</td>
       </tr>
       <tr>
-        <td>🛡️ <strong>Cyber Security</strong></td>
-        <td>Sliding-Window Anomaly Detection</td>
-        <td>✅</td>
-        <td>זיהוי <strong>DoS (SYN Flood)</strong> וסריקת פורטים מבוסס חלון זמן נייד (Sliding Window) מדויק.</td>
+        <td align="left">🛡️ <strong>Cyber Security</strong></td>
+        <td align="left">Sliding-Window Anomaly Detection</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">זיהוי <strong>DoS (SYN Flood)</strong> וסריקת פורטים מבוסס חלון זמן נייד (Sliding Window) מדויק.</td>
       </tr>
       <tr>
-        <td>🔍 <strong>DPI</strong></td>
-        <td>Deep Packet Inspection</td>
-        <td>✅</td>
-        <td>סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (בדיקות SQLi, Path Traversal וכו').</td>
+        <td align="left">🔍 <strong>DPI</strong></td>
+        <td align="left">Deep Packet Inspection</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (בדיקות SQLi, Path Traversal וכו').</td>
       </tr>
       <tr>
-        <td>⚙️ <strong>Architecture</strong></td>
-        <td>Producer-Consumer Model</td>
-        <td>✅</td>
-        <td>שימוש ב-<strong>Threading & Bounded Queue</strong> למניעת Packet Loss והצפת זיכרון.</td>
+        <td align="left">⚙️ <strong>Architecture</strong></td>
+        <td align="left">Producer-Consumer Model</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">שימוש ב-<strong>Threading &amp; Bounded Queue</strong> למניעת Packet Loss והצפת זיכרון.</td>
       </tr>
       <tr>
-        <td>🚦 <strong>IPS Logic</strong></td>
-        <td>Automatic Host Isolation</td>
-        <td>✅</td>
-        <td>מנגנון לבידוד זמני (Blacklisting) של IP עוין לאחר חריגה מהסף המוגדר.</td>
+        <td align="left">🚦 <strong>IPS Logic</strong></td>
+        <td align="left">Automatic Host Isolation</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">מנגנון לבידוד זמני (Blacklisting) של IP עוין לאחר חריגה מהסף המוגדר.</td>
       </tr>
       <tr>
-        <td>📝 <strong>Logging</strong></td>
-        <td>Dual-Stream Log Engine</td>
-        <td>✅</td>
-        <td>הפרדה בין פלט קונסולה צבעוני לבין כתיבת לוגים טקסטואליים נקיים ל-SIEM / Forensics.</td>
+        <td align="left">📝 <strong>Logging</strong></td>
+        <td align="left">Dual-Stream Log Engine</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">הפרדה בין פלט קונסולה צבעוני לבין כתיבת לוגים טקסטואליים נקיים ל-SIEM / Forensics.</td>
       </tr>
     </tbody>
   </table>
@@ -87,19 +87,17 @@
 
   <hr>
 
-  <div dir="rtl">
+  <div dir="rtl" align="right">
   <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-  <ul>
-    <li><strong>Concurrency & Memory Safety:</strong> שימוש ב-<code>queue.Queue(maxsize=10000)</code> להפרדה בין הלכידה לניתוח, ומניעת זליגת זיכרון ב-Scapy בעזרת <code>store=0</code>.</li>
-    <li><strong>Sliding Window Engine:</strong> שימוש ב-<code>collections.deque</code> ו-<code>defaultdict</code> לניהול מעקב זמנים מדויק בזמן אמת ללא איפוסי זיכרון מלאכותיים.</li>
+    <li><strong>Concurrency &amp; Memory Safety:</strong> שימוש ב-<code dir="ltr">queue.Queue(maxsize=10000)</code> להפרדה בין הלכידה לניתוח, ומניעת זליגת זיכרון ב-Scapy בעזרת <code dir="ltr">store=0</code>.</li>
+    <li><strong>Sliding Window Engine:</strong> שימוש ב-<code dir="ltr">collections.deque</code> ו-<code dir="ltr">defaultdict</code> לניהול מעקב זמנים מדויק בזמן אמת ללא איפוסי זיכרון מלאכותיים.</li>
     <li><strong>DPI Engine:</strong> ניתוח Bytes ישיר בשכבת ה-Raw Payload לזיהוי מחרוזות חשודות ויעילות בביצועים.</li>
-    <li><strong>Clean Logging Strategy:</strong> פורמטר ייעודי (<code>ColoredConsoleFormatter</code>) לצביעת הודעות בקונסולה מבלי לזהם את קובצי הלוג בתווי ANSI.</li>
-  </ul>
+    <li><strong>Clean Logging Strategy:</strong> פורמטר ייעודי (<code dir="ltr">ColoredConsoleFormatter</code>) לצביעת הודעות בקונסולה מבלי לזהם את קובצי הלוג בתווי ANSI.</li>
 </div>
 
   <hr>
 
-  <h2>🖥️ דוגמת פלט (Console Output)</h2>
+  <h2 align="right" dir="rtl">🖥️ דוגמת פלט (Console Output)</h2>
   <div dir="ltr" align="left">
     <pre>
 2026-08-06 01:50:10 [INFO] [DNS] Device 192.168.1.15 query: example.com
@@ -111,7 +109,7 @@
 
   <hr>
 
-  <h2>⚙️ התקנה והרצה (Quick Start)</h2>
+  <h2 align="right" dir="rtl">⚙️ התקנה והרצה (Quick Start)</h2>
   <div dir="ltr" align="left">
     <pre>
 ## Clone the repository
@@ -133,8 +131,8 @@ python main.py
 
   <hr>
 
-  <h2>📄 רישיון</h2>
-  <p>
+  <h2 align="right" dir="rtl">📄 רישיון</h2>
+  <p align="right" dir="rtl">
     הפרויקט מופץ תחת רישיון <strong>MIT</strong> – חופשי לשימוש ושינוי למטרות לימודיות ומחקריות.
   </p>
 
