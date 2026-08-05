@@ -1,8 +1,8 @@
-import threading
 import logging
-from queue import Queue, Empty
+import threading
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
-from collections import defaultdict
+from queue import Queue, Empty
 from scapy.all import sniff, IP, TCP, UDP, Raw, DNSQR
 
 class Colors:
@@ -13,102 +13,145 @@ class Colors:
     MAGENTA = "\033[95m"
     RESET = "\033[0m"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.FileHandler("network_security.log"), logging.StreamHandler()]
-)
+class ColoredConsoleFormatter(logging.Formatter):
+    """פורמטר שמחיל צבעים רק על פלט ה-Console"""
+    COLOR_MAP = {
+        logging.WARNING: Colors.YELLOW,
+        logging.ERROR: Colors.RED,
+        logging.CRITICAL: Colors.RED,
+        logging.INFO: Colors.CYAN
+    }
+
+    def format(self, record):
+        color = self.COLOR_MAP.get(record.levelno, Colors.RESET)
+        message = super().format(record)
+        return f"{color}{message}{Colors.RESET}"
+
+def setup_logger():
+    logger = logging.getLogger("NetworkGuardian")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+    # Console Handler (עם צבעים)
+    ch = logging.StreamHandler()
+    ch.setFormatter(ColoredConsoleFormatter('%(asctime)s [%(levelname)s] %(message)s'))
+    
+    # File Handler (טקסט נקי בלבד לטובת SIEM/Log parsing)
+    fh = logging.FileHandler("network_security.log")
+    fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+
+    logger.addHandler(ch)
+    logger.addHandler(fh)
+    return logger
 
 class NetworkGuardian:
-    def __init__(self):
-        self.packet_queue = Queue()
+    def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10):
+        self.logger = setup_logger()
+        self.packet_queue = Queue(maxsize=10000) # מניעת הצפת זיכרון בלתי מוגבלת
         self.running = True
-        self.DOS_THRESHOLD = 50        
-        self.SCAN_THRESHOLD = 15       
-        self.whitelist = set() 
-        self.blacklist = {}            
-        self.syn_counts = defaultdict(int)
-        self.port_history = defaultdict(set)
-        self.last_cleanup = datetime.now()
+        
+        self.DOS_THRESHOLD = dos_threshold
+        self.SCAN_THRESHOLD = scan_threshold
+        self.TIME_WINDOW = timedelta(seconds=time_window_sec)
+        
+        self.whitelist = set()
+        self.blacklist = {} # ip -> expire_time
+        
+        # Sliding Windows: IP -> deque of timestamps
+        self.syn_history = defaultdict(deque)
+        # Sliding Windows: IP -> deque of (timestamp, port)
+        self.port_history = defaultdict(deque)
 
-    def _log_alert(self, level, msg, color=Colors.RESET):
-        logging.info(f"{color}[{level}] {msg}{Colors.RESET}")
+        self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
 
-    def is_isolated(self, ip):
+    def is_isolated(self, ip: str, now: datetime) -> bool:
         if ip in self.blacklist:
-            if datetime.now() < self.blacklist[ip]:
+            if now < self.blacklist[ip]:
                 return True
-            else:
-                del self.blacklist[ip]
+            del self.blacklist[ip]
         return False
+
+    def _clean_old_records(self, history_deque: deque, now: datetime):
+        """מנקה רשומות שחרגו מחלון הזמן הנייד (Sliding Window)"""
+        while history_deque and (now - history_deque[0][0] if isinstance(history_deque[0], tuple) else now - history_deque[0]) > self.TIME_WINDOW:
+            history_deque.popleft()
 
     def analyze_packet(self, pkt):
         if not pkt.haslayer(IP):
             return
 
+        now = datetime.now()
         src_ip = pkt[IP].src
-        if src_ip in self.whitelist or self.is_isolated(src_ip):
+
+        if src_ip in self.whitelist or self.is_isolated(src_ip, now):
             return
 
-        # 1. זיהוי שאילתות DNS (שמות אתרים) - זה יוסיף הרבה "חיים" למסך
+        # 1. DNS Query Inspection
         if pkt.haslayer(DNSQR):
-            query = pkt[DNSQR].qname.decode(errors='ignore')
-            # נתעלם משאילתות פנימיות משעממות של ווינדוס
-            if not query.endswith(".local."):
-                self._log_alert("DNS", f"Device {src_ip} is looking for: {query}", Colors.CYAN)
-
-        # 2. זיהוי DoS (SYN Flood)
-        if pkt.haslayer(TCP) and pkt[TCP].flags == "S":
-            self.syn_counts[src_ip] += 1
-            if self.syn_counts[src_ip] > self.DOS_THRESHOLD:
-                self.blacklist[src_ip] = datetime.now() + timedelta(minutes=5)
-                self._log_alert("CRITICAL", f"!!! DoS DETECTED: Isolating {src_ip} !!!", Colors.RED)
-
-        # 3. זיהוי סריקת פורטים
-        dst_port = pkt[TCP].dport if pkt.haslayer(TCP) else (pkt[UDP].dport if pkt.haslayer(UDP) else None)
-        if dst_port:
-            self.port_history[src_ip].add(dst_port)
-            if len(self.port_history[src_ip]) > self.SCAN_THRESHOLD:
-                self._log_alert("WARNING", f"Port Scan detected from {src_ip}", Colors.YELLOW)
-                self.port_history[src_ip].clear()
-
-        # 4. Deep Packet Inspection (DPI)
-        if pkt.haslayer(Raw):
             try:
-                payload = pkt[Raw].load.decode('utf-8', errors='ignore').lower()
-                suspicious = ["admin", "password", "etc/passwd", "select * from"]
-                for word in suspicious:
-                    if word in payload:
-                        self._log_alert("SECURITY", f"Suspicious keyword '{word}' detected from {src_ip}", Colors.MAGENTA)
-            except:
+                query = pkt[DNSQR].qname.decode('utf-8', errors='ignore')
+                if not query.endswith(".local."):
+                    self.logger.info(f"[DNS] Device {src_ip} query: {query}")
+            except Exception:
                 pass
+
+        # 2. DoS (SYN Flood) with Sliding Window
+        if pkt.haslayer(TCP):
+            # בדיקת Bitwise לחשיפת דגל SYN
+            if pkt[TCP].flags & 0x02:
+                syn_deque = self.syn_history[src_ip]
+                self._clean_old_records(syn_deque, now)
+                syn_deque.append(now)
+
+                if len(syn_deque) > self.DOS_THRESHOLD:
+                    self.blacklist[src_ip] = now + timedelta(minutes=5)
+                    self.logger.critical(f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes")
+                    syn_deque.clear()
+
+        # 3. Port Scanning with Sliding Window
+        dst_port = None
+        if pkt.haslayer(TCP):
+            dst_port = pkt[TCP].dport
+        elif pkt.haslayer(UDP):
+            dst_port = pkt[UDP].dport
+
+        if dst_port:
+            ports_deque = self.port_history[src_ip]
+            self._clean_old_records(ports_deque, now)
+            ports_deque.append((now, dst_port))
+
+            unique_ports = {port for _, port in ports_deque}
+            if len(unique_ports) > self.SCAN_THRESHOLD:
+                self.logger.warning(f"[PORT SCAN DETECTED] Host {src_ip} scanned {len(unique_ports)} unique ports")
+                ports_deque.clear()
+
+        # 4. Deep Packet Inspection (DPI) על בסיס Bytes (חיסכון ב-Decode)
+        if pkt.haslayer(Raw):
+            payload = pkt[Raw].load.lower()
+            for kw in self.suspicious_keywords:
+                if kw in payload:
+                    self.logger.warning(f"[SECURITY DPI] Suspicious keyword '{kw.decode()}' from {src_ip}")
 
     def packet_worker(self):
         while self.running:
             try:
-                packet = self.packet_queue.get(timeout=1)
+                packet = self.packet_queue.get(timeout=0.5)
                 self.analyze_packet(packet)
                 self.packet_queue.task_done()
             except Empty:
                 continue
-            
-            if datetime.now() - self.last_cleanup > timedelta(minutes=1):
-                self.syn_counts.clear()
-                self.port_history.clear()
-                self.last_cleanup = datetime.now()
 
     def start(self):
-        print(f"{Colors.CYAN}NetworkGuardian Engine Starting...{Colors.RESET}")
+        self.logger.info("NetworkGuardian Engine Starting...")
         worker = threading.Thread(target=self.packet_worker, daemon=True)
         worker.start()
 
-        print(f"{Colors.GREEN}[*] Worker Thread active. Sniffing all traffic...{Colors.RESET}")
+        self.logger.info("[*] Worker active. Sniffing interface...")
         try:
-            # הורדנו את הפילטר "ip" כדי לתפוס גם DNS (שמשתמש ב-UDP) וגם IPv6
-            sniff(prn=lambda x: self.packet_queue.put(x), store=0)
-        except Exception as e:
-            print(f"{Colors.RED}[!] Error: {e}{Colors.RESET}")
+            # store=0 מונע זליגת זיכרון של Scapy בתוך הזיכרון הפנימי
+            sniff(prn=lambda x: self.packet_queue.put_nowait(x) if not self.packet_queue.full() else None, store=0)
         except KeyboardInterrupt:
+            self.logger.info("Shutting down engine...")
             self.running = False
 
 if __name__ == "__main__":
