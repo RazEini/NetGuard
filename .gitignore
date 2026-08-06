@@ -22,3 +22,12 @@ desktop.ini
 # IDEs
 .vscode/
 .idea/
+
+# Security & Environment Configs
+.env
+*.env
+config.secret.json
+
+# Log output files (NIDS logs containing internal IPs)
+logs/
+*.json
