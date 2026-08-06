@@ -1,5 +1,6 @@
 import json
 import logging
+import os  # <-- 1. התווסף ה-import הזה
 import threading
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
@@ -52,12 +53,15 @@ def setup_logger():
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
+    # 2. יצירת תיקיית logs אם היא עדיין לא קיימת
+    os.makedirs("logs", exist_ok=True)
+
     # Console Handler (פלט צבעוני לטרמינל)
     ch = logging.StreamHandler()
     ch.setFormatter(ColoredConsoleFormatter('%(asctime)s [%(levelname)s] %(message)s'))
     
-    # File Handler (פלט JSON מובנה לקובץ)
-    fh = logging.FileHandler("network_security.json", encoding="utf-8")
+    # File Handler (פלט JSON מובנה לקובץ בתוך תיקיית logs)
+    fh = logging.FileHandler(os.path.join("logs", "network_security.json"), encoding="utf-8")
     fh.setFormatter(JsonFileFormatter())
 
     logger.addHandler(ch)
