@@ -5,7 +5,7 @@
   <p align="center" dir="rtl">
     מערכת <strong>Network Intrusion Detection System (NIDS)</strong> מקצה לקצה בזמן אמת.
     <br>
-    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם <strong>DPI</strong>, זיהוי אנומליות ב-Sliding Window, וסטאק ניטור וויזואליזציה מלא ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
+    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם <strong>DPI</strong>, זיהוי אנומליות ב-Sliding Window, וסטאק ניטור מנוהל קוד (<strong>Dashboard as Code</strong>) ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
   </p>
 
   <br>
@@ -16,6 +16,7 @@
     <img src="https://img.shields.io/badge/Monitoring-Grafana-F46800?logo=grafana" alt="Grafana Badge">
     <img src="https://img.shields.io/badge/Logs-Loki_%26_Promtail-orange" alt="Loki Badge">
     <img src="https://img.shields.io/badge/Security-DPI_%26_NIDS-brightgreen" alt="NIDS Badge">
+    <img src="https://img.shields.io/badge/IaC-Dashboards_as_Code-blueviolet" alt="IaC Badge">
   </p>
 
   <br>
@@ -26,7 +27,7 @@
   <p align="center" dir="rtl">
     <strong>NetGuard</strong> מספקת מענה שלם לניטור ואבטחת תעבורת רשת בשכבות 3, 4 ו-7 של מודל ה-OSI. 
     <br>
-    הארכיטקטורה מנוהלת דרך צינור נתונים רציף:
+    הארכיטקטורה מנוהלת דרך צינור נתונים רציף עם טעינת דשבורדים ותקורת נתונים אוטומטית (Automated Provisioning):
   </p> <br>
 
   <div align="center" dir="ltr">
@@ -36,13 +37,40 @@
       <code>📄 JSON Logs File</code>
     </p>
     <p>
-      <code>📊 Grafana Dashboard</code> &nbsp;⬅️&nbsp; 
+      <code>📊 Auto-Provisioned Grafana</code> &nbsp;⬅️&nbsp; 
       <code>🗄️ Loki DB</code> &nbsp;⬅️&nbsp; 
       <code>🔄 Promtail Shipper</code>
     </p>
   </div>
 
   <br>
+
+  <hr>
+
+  <h2 align="center">📂 Project Structure</h2>
+  <div dir="ltr" align="left">
+    <pre><code>python_sniffer/
+├── grafana/
+│   └── dashboards/                 # Standard JSON Dashboards (Git Version-Controlled)
+│       ├── dashboard-Live Security Log Stream.json
+│       ├── dashboard-Security Events Distribution.json
+│       ├── dashboard-Threat Timeline & Severity Levels.json
+│       ├── dashboard-Top Suspicious Source IPs.json
+│       └── dashboard-Total Security Alerts.json
+├── provisioning/                   # Grafana Automated Provisioning Configs
+│   ├── dashboards/
+│   │   └── dashboards.yml
+│   └── datasources/
+│       └── datasources.yml
+├── logs/                           # Runtime Log Directory (Ignored by Git)
+├── .env.example
+├── .gitignore
+├── docker-compose.yml
+├── main.py                         # NIDS Core Engine
+├── promtail-config.yml
+├── requirements.txt
+└── test_attack.py                  # Traffic Simulator</code></pre>
+  </div>
 
   <hr>
 
@@ -77,10 +105,10 @@
         <td align="right" dir="rtl">סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (SQLi, Credentials, Path Traversal).</td>
       </tr>
       <tr>
-        <td align="left">📊 <strong>Observability</strong></td>
-        <td align="left">Grafana & Loki Dashboards</td>
+        <td align="left">📊 <strong>Observability & IaC</strong></td>
+        <td align="left">Dashboard as Code (Grafana + Loki)</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">וויזואליזציה בזמן אמת של אירועי אבטחה, כמות הלוגים לפי חומרה (INFO/WARN/CRITICAL) ושאילתות LogQL.</td>
+        <td align="right" dir="rtl">חמישה דשבורדים מוגדרים מראש בפורמט JSON סטנדרטי הנטענים אוטומטית (Automated Provisioning) עם ענידת <code>uid: loki</code> אחידה.</td>
       </tr>
       <tr>
         <td align="left">⚙️ <strong>Architecture</strong></td>
@@ -109,11 +137,11 @@
 
   <div dir="rtl" align="right">
   <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-     <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
-     <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
-     <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
-     <li><strong>Grafana Visuals:</strong> בניית לוחות בקרה (Dashboards) מבוססי LogQL לצפייה בזמן אמת באירועי אבטחה והתראות.</li>
-     <li><strong>Docker Compose Stack:</strong> פריסה מהירה ורציפה של כל תשתיות ה-Observability.</li>
+      <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
+      <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
+      <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
+      <li><strong>Dashboards as Code (IaC):</strong> ניהול גרסאות מלא של 5 לוחות הבקרה ב-Git תחת <code>grafana/dashboards/</code> וטעינתם האוטומטית ל-Grafana בעליית ה-Container דרך קבצי ה-Provisioning.</li>
+      <li><strong>Docker Compose Stack:</strong> פריסה בלחיצת כפתור אחת של כל תשתיות ה-Observability.</li>
   </div>
 
   <hr>
@@ -143,6 +171,7 @@ cd python_sniffer
 cp .env.example .env # Set your Grafana password in .env
 
 ## 3. Start Observability Stack (Grafana, Loki, Promtail)
+# Grafana will automatically provision all dashboards from grafana/dashboards/
 docker compose up -d
 
 ## 4. Setup Python Environment
@@ -161,7 +190,7 @@ python test_attack.py</code></pre>
   <br>
 
   <div dir="rtl" align="right">
-    <p>📊 <strong>גישה ל-Grafana:</strong> היכנס בדפדפן ל-<code>http://localhost:3000</code> (שם משתמש: <code>admin</code>, סיסמה מוגדרת ב-<code>.env</code>).</p>
+    <p>📊 <strong>גישה ל-Grafana:</strong> היכנס בדפדפן ל-<code>http://localhost:3000</code> (שם משתמש: <code>admin</code>, סיסמה מוגדרת ב-<code>.env</code>). כל הדשבורדים כבר יופיעו טעונים ומוכנים לשימוש!</p>
   </div>
 
   <hr>
