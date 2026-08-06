@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import threading
+import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from queue import Queue, Empty
@@ -29,7 +30,7 @@ class ColoredConsoleFormatter(logging.Formatter):
         return f"{color}{message}{Colors.RESET}"
 
 class JsonFileFormatter(logging.Formatter):
-    """פורמטר שמייצר לוגים במבנה JSON מושלם עבור Grafana / Loki"""
+    """פורמטר שמייצר לוגים במבנה JSON מובנה עבור Grafana / Loki"""
     def format(self, record):
         log_record = {
             "timestamp": datetime.fromtimestamp(record.created).isoformat(),
@@ -38,7 +39,6 @@ class JsonFileFormatter(logging.Formatter):
             "logger": record.name
         }
         
-        # חילוץ שדות דינמיים מתוך ה-extra
         if hasattr(record, 'src_ip'):
             log_record['src_ip'] = record.src_ip
         if hasattr(record, 'event_type'):
@@ -53,14 +53,11 @@ def setup_logger():
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-    # 2. יצירת תיקיית logs אם היא עדיין לא קיימת
     os.makedirs("logs", exist_ok=True)
 
-    # Console Handler (פלט צבעוני לטרמינל)
     ch = logging.StreamHandler()
     ch.setFormatter(ColoredConsoleFormatter('%(asctime)s [%(levelname)s] %(message)s'))
     
-    # File Handler (פלט JSON מובנה לקובץ בתוך תיקיית logs)
     fh = logging.FileHandler(os.path.join("logs", "network_security.json"), encoding="utf-8")
     fh.setFormatter(JsonFileFormatter())
 
@@ -69,18 +66,19 @@ def setup_logger():
     return logger
 
 class NetworkGuardian:
-    def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10):
+    def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10, cleanup_interval_sec=30):
         self.logger = setup_logger()
         self.packet_queue = Queue(maxsize=10000)
-        self.running = True
+        self.stop_event = threading.Event()
         self.lock = threading.Lock()
         
         self.DOS_THRESHOLD = dos_threshold
         self.SCAN_THRESHOLD = scan_threshold
         self.TIME_WINDOW = timedelta(seconds=time_window_sec)
+        self.CLEANUP_INTERVAL = cleanup_interval_sec
         
         self.whitelist = set()
-        self.blacklist = {} 
+        self.blacklist = {}  # {ip: unblock_time}
         
         self.syn_history = defaultdict(deque)
         self.port_history = defaultdict(deque)
@@ -95,12 +93,18 @@ class NetworkGuardian:
         now = datetime.now()
         
         with self.lock:
+            # 1. בדיקת Whitelist תחת Lock למניעת Data Race
+            if src_ip in self.whitelist:
+                return
+
+            # 2. בדיקת Blacklist עם ניקוי חסימה פגה
             if src_ip in self.blacklist:
                 if now < self.blacklist[src_ip]:
                     return
                 else:
                     del self.blacklist[src_ip]
 
+        # הכנסה לתור ללא חסימה (Non-blocking)
         if not self.packet_queue.full():
             self.packet_queue.put_nowait(pkt)
 
@@ -108,12 +112,39 @@ class NetworkGuardian:
         while history_deque and (now - history_deque[0][0]) > self.TIME_WINDOW:
             history_deque.popleft()
 
+    def _cleanup_worker(self):
+        """Thread ייעודי למניעת Memory Leaks - מוחק מפתחות ריקים מההיסטוריה"""
+        while not self.stop_event.is_set():
+            time.sleep(self.CLEANUP_INTERVAL)
+            now = datetime.now()
+            
+            with self.lock:
+                # ניקוי syn_history
+                expired_syn_ips = []
+                for ip, history in list(self.syn_history.items()):
+                    self._clean_old_records(history, now)
+                    if not history:
+                        expired_syn_ips.append(ip)
+                for ip in expired_syn_ips:
+                    del self.syn_history[ip]
+
+                # ניקוי port_history
+                expired_port_ips = []
+                for ip, history in list(self.port_history.items()):
+                    self._clean_old_records(history, now)
+                    if not history:
+                        expired_port_ips.append(ip)
+                for ip in expired_port_ips:
+                    del self.port_history[ip]
+
+                # ניקוי כתובות פגות תוקף ב-blacklist
+                expired_blacklist = [ip for ip, exp_time in self.blacklist.items() if now >= exp_time]
+                for ip in expired_blacklist:
+                    del self.blacklist[ip]
+
     def analyze_packet(self, pkt):
         now = datetime.now()
         src_ip = pkt[IP].src
-
-        if src_ip in self.whitelist:
-            return
 
         # 1. DNS Query Inspection
         if pkt.haslayer(DNSQR):
@@ -127,7 +158,7 @@ class NetworkGuardian:
             except Exception as e:
                 self.logger.debug(f"[DNS] Parsing error: {e}")
 
-        # 2. DoS (SYN Flood) & 3. Port Scanning
+        # 2. DoS & Port Scanning Analysis
         dst_port = None
         is_syn = False
 
@@ -139,6 +170,10 @@ class NetworkGuardian:
             dst_port = pkt[UDP].dport
 
         with self.lock:
+            # Re-check whitelist inside analyze block (safety check)
+            if src_ip in self.whitelist:
+                return
+
             if is_syn:
                 syn_deque = self.syn_history[src_ip]
                 self._clean_old_records(syn_deque, now)
@@ -165,7 +200,7 @@ class NetworkGuardian:
                     )
                     ports_deque.clear()
 
-        # 4. Deep Packet Inspection (DPI)
+        # 3. Deep Packet Inspection (DPI)
         if pkt.haslayer(Raw):
             payload = pkt[Raw].load.lower()
             for kw in self.suspicious_keywords:
@@ -177,7 +212,7 @@ class NetworkGuardian:
                     )
 
     def packet_worker(self):
-        while self.running:
+        while not self.stop_event.is_set():
             try:
                 packet = self.packet_queue.get(timeout=0.5)
                 self.analyze_packet(packet)
@@ -189,16 +224,28 @@ class NetworkGuardian:
 
     def start(self):
         self.logger.info("NetworkGuardian Engine Starting...")
+        
+        # Worker thread
         worker = threading.Thread(target=self.packet_worker, daemon=True)
         worker.start()
 
-        self.logger.info("[*] Worker active. Sniffing interface...")
+        # Garbage collector thread for memory cleanup
+        cleanup_thread = threading.Thread(target=self._cleanup_worker, daemon=True)
+        cleanup_thread.start()
+
+        self.logger.info("[*] Engine Active. Sniffing packets...")
         try:
-            sniff(prn=self._enqueue_packet, store=0, filter="ip")
+            sniff(
+                prn=self._enqueue_packet, 
+                store=0, 
+                filter="ip", 
+                stop_filter=lambda _: self.stop_event.is_set()
+            )
         except KeyboardInterrupt:
             self.logger.info("Shutting down engine...")
-            self.running = False
+            self.stop_event.set()
             worker.join(timeout=2)
+            cleanup_thread.join(timeout=2)
 
 if __name__ == "__main__":
     guardian = NetworkGuardian()
