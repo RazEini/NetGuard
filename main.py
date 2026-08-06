@@ -1,6 +1,6 @@
 import json
 import logging
-import os  # <-- 1. התווסף ה-import הזה
+import os
 import threading
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
