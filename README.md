@@ -2,7 +2,7 @@
 
   <h1 align="center">🕵️ NetGuard – Full-Stack NIDS & Security Observability Engine</h1>
 
-  <p align="center" dir="rtl">
+  <p align="right" dir="rtl">
     מערכת <strong>Network Intrusion Detection System (NIDS)</strong> מקצה לקצה בזמן אמת.
     <br>
     משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם <strong>DPI</strong>, זיהוי אנומליות ב-Sliding Window, מנגנוני סיכול אקטיביים (Active Defense), וסטאק ניטור מנוהל קוד (<strong>Dashboard as Code</strong>) ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
