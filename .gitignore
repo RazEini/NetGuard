@@ -31,3 +31,6 @@ config.secret.json
 # Log output files (NIDS logs containing internal IPs)
 logs/
 *.json
+
+# Exceptions: Allow Grafana dashboards to be tracked by Git
+!grafana/dashboards/*.json
