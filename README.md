@@ -66,7 +66,7 @@
 ├── .env.example
 ├── .gitignore
 ├── docker-compose.yml
-├── main.py                         # NIDS Core Engine
+├── main.py                         # NIDS Core Engine (Thread-Safe & GC Refactored)
 ├── promtail-config.yml
 ├── requirements.txt
 └── test_attack.py                  # Traffic Simulator</code></pre>
@@ -146,7 +146,7 @@
       <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets, פיענוח פרוטוקולי תקשורת, וסריקת עומק ברמת ה-Payload (DPI).</li>
       <li><strong>Producer-Consumer Architecture:</strong> הפרדה מלאה בין לכידת החבילות לבין ניתוחן באמצעות <code>queue.Queue(maxsize=10000)</code> המונעת Packet Loss באירועי עומס.</li>
       <li><strong>Thread-Safety & Active Defense:</strong> ניהול מצבי Whitelist/Blacklist וזיהוי אנומליות תחת מנעולים (<code>threading.Lock</code>) למניעת Data Race, לצד חסימה דינמית וזמנית של כתובות IP תוקפות.</li>
-      <li><strong>Background Garbage Collector:</strong> תהליך רקע ייעודי (Garbage Collector Thread) המנקה מבני נתונים ישנים מהזיכרון מדי 30 שניות ומבטיח אפס זליגות זיכרון (Zero-Leak Dynamic Memory Management).</li>
+      <li><strong>Background Garbage Collector:</strong> תהליך רקע ייעודי (Garbage Collector Thread) המנקה מבני נתונים ישנים (Sliding Window History & Blacklist) מהזיכרון מדי 30 שניות בצורה סנכרונית ובטוחה (Thread-Safe), ומבטיח אפס זליגות זיכרון עקב כתובות IP רדומות.</li>
       <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
       <li><strong>Dashboards as Code (IaC):</strong> ניהול גרסאות מלא של 5 לוחות הבקרה ב-Git תחת <code>grafana/dashboards/</code> וטעינתם האוטומטית ל-Grafana בעליית ה-Container.</li>
       <li><strong>Docker Compose Stack:</strong> פריסה בלחיצת כפתור אחת של כל תשתיות ה-Observability.</li>
@@ -189,6 +189,10 @@ source .venv/bin/activate    # On Linux/Mac
 pip install -r requirements.txt
 
 ## 5. Run NIDS Engine (Requires Administrator / Root)
+# On Linux / Mac:
+sudo .venv/bin/python main.py
+
+# On Windows (Run PowerShell / CMD as Administrator):
 python main.py
 
 ## 6. (Optional) Run Attack Simulator in a separate terminal
