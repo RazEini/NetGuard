@@ -5,7 +5,7 @@
   <p align="center" dir="rtl">
     מערכת <strong>Network Intrusion Detection System (NIDS)</strong> מקצה לקצה בזמן אמת.
     <br>
-    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם **DPI**, זיהוי אנומליות ב-Sliding Window, וסטאק ניטור וויזואליזציה מלא ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
+    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם <strong>DPI</strong>, זיהוי אנומליות ב-Sliding Window, וסטאק ניטור וויזואליזציה מלא ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
   </p>
 
   <br>
@@ -23,18 +23,23 @@
   <hr>
 
   <h2 align="center">🔎 Overview & Architecture</h2>
-  <p align="right" dir="rtl">
+  <p align="center" dir="rtl">
     <strong>NetGuard</strong> מספקת מענה שלם לניטור ואבטחת תעבורת רשת בשכבות 3, 4 ו-7 של מודל ה-OSI. 
     <br>
-    הארכיטקטורה מבוססת צינור עיבוד נתונים (Data Pipeline) מלא:
-  </p>
+    הארכיטקטורה מנוהלת דרך צינור נתונים רציף:
+  </p> <br>
 
   <div align="center" dir="ltr">
-    <code>
-      [ Network Traffic ] ──► [ Python/Scapy Engine ] ──► [ JSON Logs File ]
-                                                                │
-      [ Grafana Dashboard ] ◄── [ Loki DB ] ◄── [ Promtail ] ◄──┘
-    </code>
+    <p>
+      <code>📡 Network Traffic</code> &nbsp;➔&nbsp; 
+      <code>🐍 Python/Scapy Engine</code> &nbsp;➔&nbsp; 
+      <code>📄 JSON Logs File</code>
+    </p>
+    <p>
+      <code>📊 Grafana Dashboard</code> &nbsp;⬅️&nbsp; 
+      <code>🗄️ Loki DB</code> &nbsp;⬅️&nbsp; 
+      <code>🔄 Promtail Shipper</code>
+    </p>
   </div>
 
   <br>
@@ -104,11 +109,11 @@
 
   <div dir="rtl" align="right">
   <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-      <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
-      <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
-      <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
-      <li><strong>Grafana Visuals:</strong> בניית לוחות בקרה (Dashboards) מבוססי LogQL לצפייה בזמן אמת באירועי אבטחה והתראות.</li>
-      <li><strong>Docker Compose Stack:</strong> פריסה מהירה ורציפה של כל תשתיות ה-Observability.</li>
+     <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
+     <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
+     <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
+     <li><strong>Grafana Visuals:</strong> בניית לוחות בקרה (Dashboards) מבוססי LogQL לצפייה בזמן אמת באירועי אבטחה והתראות.</li>
+     <li><strong>Docker Compose Stack:</strong> פריסה מהירה ורציפה של כל תשתיות ה-Observability.</li>
   </div>
 
   <hr>
