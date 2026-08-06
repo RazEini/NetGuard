@@ -104,13 +104,11 @@
 
   <div dir="rtl" align="right">
   <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-    <ul>
       <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
       <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
       <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
       <li><strong>Grafana Visuals:</strong> בניית לוחות בקרה (Dashboards) מבוססי LogQL לצפייה בזמן אמת באירועי אבטחה והתראות.</li>
       <li><strong>Docker Compose Stack:</strong> פריסה מהירה ורציפה של כל תשתיות ה-Observability.</li>
-    </ul>
   </div>
 
   <hr>
