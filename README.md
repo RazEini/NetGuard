@@ -1,32 +1,41 @@
 <div dir="rtl">
 
-  <h1 align="center">🕵️ NetGuard – Python Network Sniffer &amp; DPI Engine</h1>
+  <h1 align="center">🕵️ NetGuard – Full-Stack NIDS & Security Observability Engine</h1>
 
   <p align="center" dir="rtl">
-    מנוע לניתוח תעבורת רשת בזמן אמת עם יכולות <strong>Deep Packet Inspection (DPI)</strong>, 
-    זיהוי אנומליות מבוסס היוריסטיקה וחלון זמן נייד (Sliding Window), והתראות אבטחה מתקדמות.
+    מערכת <strong>Network Intrusion Detection System (NIDS)</strong> מקצה לקצה בזמן אמת.
     <br>
-    מבוסס <strong>Python + Scapy</strong> בארכיטקטורת Multi-threaded.
+    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם **DPI**, זיהוי אנומליות ב-Sliding Window, וסטאק ניטור וויזואליזציה מלא ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
   </p>
 
   <br>
   <p align="center">
     <img src="https://img.shields.io/badge/Python-3.x-blue?logo=python" alt="Python Badge">
     <img src="https://img.shields.io/badge/Library-Scapy-red" alt="Scapy Badge">
-    <img src="https://img.shields.io/badge/Security-DPI-orange" alt="DPI Badge">
-    <img src="https://img.shields.io/badge/Analysis-Multithreaded-lightgrey" alt="Arch Badge">
+    <img src="https://img.shields.io/badge/Stack-Docker_Compose-2496ED?logo=docker" alt="Docker Badge">
+    <img src="https://img.shields.io/badge/Monitoring-Grafana-F46800?logo=grafana" alt="Grafana Badge">
+    <img src="https://img.shields.io/badge/Logs-Loki_%26_Promtail-orange" alt="Loki Badge">
+    <img src="https://img.shields.io/badge/Security-DPI_%26_NIDS-brightgreen" alt="NIDS Badge">
   </p>
 
   <br>
 
   <hr>
 
-  <h2 align="center">🔎 Overview</h2>
+  <h2 align="center">🔎 Overview & Architecture</h2>
   <p align="right" dir="rtl">
-    <strong>NetGuard</strong> הוא כלי ניטור רשת (Sniffer) מתקדם שנועד לספק שקיפות מלאה לשכבות 3, 4 ו-7 במודל ה-OSI. 
+    <strong>NetGuard</strong> מספקת מענה שלם לניטור ואבטחת תעבורת רשת בשכבות 3, 4 ו-7 של מודל ה-OSI. 
     <br>
-    בניגוד לסניפרים סטנדרטיים, הכלי משלב <strong>Sliding Window Heuristic Analysis</strong> לזיהוי מדויק של דפוסי תקיפה בזמן אמת (כמו DoS ו-Port Scanning) ומבצע ניתוח של שכבת האפליקציה (Application Layer) כדי לחשוף מידע רגיש בתעבורה.
+    הארכיטקטורה מבוססת צינור עיבוד נתונים (Data Pipeline) מלא:
   </p>
+
+  <div align="center" dir="ltr">
+    <code>
+      [ Network Traffic ] ──► [ Python/Scapy Engine ] ──► [ JSON Logs File ]
+                                                                │
+      [ Grafana Dashboard ] ◄── [ Loki DB ] ◄── [ Promtail ] ◄──┘
+    </code>
+  </div>
 
   <br>
 
@@ -54,31 +63,37 @@
         <td align="left">🛡️ <strong>Cyber Security</strong></td>
         <td align="left">Sliding-Window Anomaly Detection</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">זיהוי <strong>DoS (SYN Flood)</strong> וסריקת פורטים מבוסס חלון זמן נייד (Sliding Window) מדויק.</td>
+        <td align="right" dir="rtl">זיהוי <strong>DoS (SYN Flood)</strong> וסריקת פורטים מבוסס חלון זמן נייד מדויק.</td>
       </tr>
       <tr>
-        <td align="left">🔍 <strong>DPI</strong></td>
+        <td align="left">🔍 <strong>DPI Engine</strong></td>
         <td align="left">Deep Packet Inspection</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (בדיקות SQLi, Path Traversal וכו').</td>
+        <td align="right" dir="rtl">סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (SQLi, Credentials, Path Traversal).</td>
+      </tr>
+      <tr>
+        <td align="left">📊 <strong>Observability</strong></td>
+        <td align="left">Grafana & Loki Dashboards</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">וויזואליזציה בזמן אמת של אירועי אבטחה, כמות הלוגים לפי חומרה (INFO/WARN/CRITICAL) ושאילתות LogQL.</td>
       </tr>
       <tr>
         <td align="left">⚙️ <strong>Architecture</strong></td>
         <td align="left">Producer-Consumer Model</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">שימוש ב-<strong>Threading &amp; Bounded Queue</strong> למניעת Packet Loss והצפת זיכרון.</td>
-      </tr>
-      <tr>
-        <td align="left">🚦 <strong>IPS Logic</strong></td>
-        <td align="left">Automatic Host Isolation</td>
-        <td align="center">✅</td>
-        <td align="right" dir="rtl">מנגנון לבידוד זמני (Blacklisting) של IP עוין לאחר חריגה מהסף המוגדר.</td>
+        <td align="right" dir="rtl">שימוש ב-<strong>Threading & Bounded Queue</strong> למניעת Packet Loss והצפת זיכרון.</td>
       </tr>
       <tr>
         <td align="left">📝 <strong>Logging</strong></td>
-        <td align="left">Dual-Stream Log Engine</td>
+        <td align="left">Structured JSON Dual-Stream</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">הפרדה בין פלט קונסולה צבעוני לבין כתיבת לוגים טקסטואליים נקיים ל-SIEM / Forensics.</td>
+        <td align="right" dir="rtl">פלט קונסולה צבעוני במקביל לכתיבת לוגים במבנה JSON מובנה המותאם לאיסוף ע"י Promtail.</td>
+      </tr>
+      <tr>
+        <td align="left">🧪 <strong>Testing</strong></td>
+        <td align="left">Traffic Attack Simulator</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">סקריפט סימולציה (<code>test_attack.py</code>) ליצירת תעבורת תקיפה סינתטית לאימות מנגנוני הזיהוי.</td>
       </tr>
     </tbody>
   </table>
@@ -89,44 +104,61 @@
 
   <div dir="rtl" align="right">
   <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-    <li><strong>Concurrency &amp; Memory Safety:</strong> שימוש ב-<code dir="ltr">queue.Queue(maxsize=10000)</code> להפרדה בין הלכידה לניתוח, ומניעת זליגת זיכרון ב-Scapy בעזרת <code dir="ltr">store=0</code>.</li>
-    <li><strong>Sliding Window Engine:</strong> שימוש ב-<code dir="ltr">collections.deque</code> ו-<code dir="ltr">defaultdict</code> לניהול מעקב זמנים מדויק בזמן אמת ללא איפוסי זיכרון מלאכותיים.</li>
-    <li><strong>DPI Engine:</strong> ניתוח Bytes ישיר בשכבת ה-Raw Payload לזיהוי מחרוזות חשודות ויעילות בביצועים.</li>
-    <li><strong>Clean Logging Strategy:</strong> פורמטר ייעודי (<code dir="ltr">ColoredConsoleFormatter</code>) לצביעת הודעות בקונסולה מבלי לזהם את קובצי הלוג בתווי ANSI.</li>
-</div>
+    <ul>
+      <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
+      <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
+      <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
+      <li><strong>Grafana Visuals:</strong> בניית לוחות בקרה (Dashboards) מבוססי LogQL לצפייה בזמן אמת באירועי אבטחה והתראות.</li>
+      <li><strong>Docker Compose Stack:</strong> פריסה מהירה ורציפה של כל תשתיות ה-Observability.</li>
+    </ul>
+  </div>
 
   <hr>
 
-  <h2 align="right" dir="rtl">🖥️ דוגמת פלט (Console Output)</h2>
+  <h2 align="right" dir="rtl">📝 מבנה לוג JSON (Structured Logging)</h2>
   <div dir="ltr" align="left">
-    <pre>
-2026-08-06 01:50:10 [INFO] [DNS] Device 192.168.1.15 query: example.com
-2026-08-06 01:50:12 [WARNING] [PORT SCAN DETECTED] Host 10.0.0.4 scanned 18 unique ports
-2026-08-06 01:50:15 [CRITICAL] [DoS DETECTED] Isolating IP: 10.0.0.99 for 5 minutes
-2026-08-06 01:50:18 [WARNING] [SECURITY DPI] Suspicious keyword 'select * from' from 192.168.1.50
-    </pre>
+    <pre><code>{
+  "timestamp": "2026-08-06T10:30:15.123456",
+  "level": "WARNING",
+  "message": "[PORT SCAN DETECTED] Host 10.0.0.4 scanned 18 unique ports",
+  "logger": "NetworkGuardian",
+  "src_ip": "10.0.0.4",
+  "event_type": "PORT_SCAN",
+  "details": "18 ports scanned"
+}</code></pre>
   </div>
 
   <hr>
 
   <h2 align="right" dir="rtl">⚙️ התקנה והרצה (Quick Start)</h2>
   <div dir="ltr" align="left">
-    <pre>
-## Clone the repository
+    <pre><code>## 1. Clone the repository
 git clone https://github.com/Raz-Eini/python_sniffer.git
 cd python_sniffer
 
-## Setup Virtual Environment
+## 2. Environment Setup
+cp .env.example .env # Set your Grafana password in .env
+
+## 3. Start Observability Stack (Grafana, Loki, Promtail)
+docker compose up -d
+
+## 4. Setup Python Environment
 python -m venv .venv
-.\.venv\Scripts\activate  # On Windows
-source .venv/bin/activate # On Linux/Mac
+.\.venv\Scripts\activate     # On Windows
+source .venv/bin/activate    # On Linux/Mac
+pip install -r requirements.txt
 
-## Install Dependencies
-pip install scapy
-
-## Run as Administrator / Sudo (Required for Raw Sockets)
+## 5. Run NIDS Engine (Requires Administrator / Root)
 python main.py
-    </pre>
+
+## 6. (Optional) Run Attack Simulator in a separate terminal
+python test_attack.py</code></pre>
+  </div>
+
+  <br>
+
+  <div dir="rtl" align="right">
+    <p>📊 <strong>גישה ל-Grafana:</strong> היכנס בדפדפן ל-<code>http://localhost:3000</code> (שם משתמש: <code>admin</code>, סיסמה מוגדרת ב-<code>.env</code>).</p>
   </div>
 
   <hr>
