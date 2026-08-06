@@ -30,7 +30,6 @@ class ColoredConsoleFormatter(logging.Formatter):
         return f"{color}{message}{Colors.RESET}"
 
 class JsonFileFormatter(logging.Formatter):
-    """פורמטר שמייצר לוגים במבנה JSON מובנה עבור Grafana / Loki"""
     def format(self, record):
         log_record = {
             "timestamp": datetime.fromtimestamp(record.created).isoformat(),
@@ -93,18 +92,15 @@ class NetworkGuardian:
         now = datetime.now()
         
         with self.lock:
-            # 1. בדיקת Whitelist תחת Lock למניעת Data Race
             if src_ip in self.whitelist:
                 return
 
-            # 2. בדיקת Blacklist עם ניקוי חסימה פגה
             if src_ip in self.blacklist:
                 if now < self.blacklist[src_ip]:
                     return
                 else:
                     del self.blacklist[src_ip]
 
-        # הכנסה לתור ללא חסימה (Non-blocking)
         if not self.packet_queue.full():
             self.packet_queue.put_nowait(pkt)
 
@@ -113,13 +109,11 @@ class NetworkGuardian:
             history_deque.popleft()
 
     def _cleanup_worker(self):
-        """Thread ייעודי למניעת Memory Leaks - מוחק מפתחות ריקים מההיסטוריה"""
         while not self.stop_event.is_set():
             time.sleep(self.CLEANUP_INTERVAL)
             now = datetime.now()
             
             with self.lock:
-                # ניקוי syn_history
                 expired_syn_ips = []
                 for ip, history in list(self.syn_history.items()):
                     self._clean_old_records(history, now)
@@ -128,7 +122,6 @@ class NetworkGuardian:
                 for ip in expired_syn_ips:
                     del self.syn_history[ip]
 
-                # ניקוי port_history
                 expired_port_ips = []
                 for ip, history in list(self.port_history.items()):
                     self._clean_old_records(history, now)
@@ -137,7 +130,6 @@ class NetworkGuardian:
                 for ip in expired_port_ips:
                     del self.port_history[ip]
 
-                # ניקוי כתובות פגות תוקף ב-blacklist
                 expired_blacklist = [ip for ip, exp_time in self.blacklist.items() if now >= exp_time]
                 for ip in expired_blacklist:
                     del self.blacklist[ip]
@@ -146,7 +138,6 @@ class NetworkGuardian:
         now = datetime.now()
         src_ip = pkt[IP].src
 
-        # 1. DNS Query Inspection
         if pkt.haslayer(DNSQR):
             try:
                 query = pkt[DNSQR].qname.decode('utf-8', errors='ignore')
@@ -158,7 +149,6 @@ class NetworkGuardian:
             except Exception as e:
                 self.logger.debug(f"[DNS] Parsing error: {e}")
 
-        # 2. DoS & Port Scanning Analysis
         dst_port = None
         is_syn = False
 
@@ -170,7 +160,6 @@ class NetworkGuardian:
             dst_port = pkt[UDP].dport
 
         with self.lock:
-            # Re-check whitelist inside analyze block (safety check)
             if src_ip in self.whitelist:
                 return
 
@@ -200,7 +189,6 @@ class NetworkGuardian:
                     )
                     ports_deque.clear()
 
-        # 3. Deep Packet Inspection (DPI)
         if pkt.haslayer(Raw):
             payload = pkt[Raw].load.lower()
             for kw in self.suspicious_keywords:
@@ -225,11 +213,9 @@ class NetworkGuardian:
     def start(self):
         self.logger.info("NetworkGuardian Engine Starting...")
         
-        # Worker thread
         worker = threading.Thread(target=self.packet_worker, daemon=True)
         worker.start()
 
-        # Garbage collector thread for memory cleanup
         cleanup_thread = threading.Thread(target=self._cleanup_worker, daemon=True)
         cleanup_thread.start()
 
