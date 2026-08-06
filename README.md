@@ -5,7 +5,7 @@
   <p align="center" dir="rtl">
     מערכת <strong>Network Intrusion Detection System (NIDS)</strong> מקצה לקצה בזמן אמת.
     <br>
-    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם <strong>DPI</strong>, זיהוי אנומליות ב-Sliding Window, וסטאק ניטור מנוהל קוד (<strong>Dashboard as Code</strong>) ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
+    משלבת מנוע לכידה וניתוח ב-Python (Scapy) בארכיטקטורת Multi-threaded, יחד עם <strong>DPI</strong>, זיהוי אנומליות ב-Sliding Window, מנגנוני סיכול אקטיביים (Active Defense), וסטאק ניטור מנוהל קוד (<strong>Dashboard as Code</strong>) ב-<strong>Docker (Grafana + Loki + Promtail)</strong>.
   </p>
 
   <br>
@@ -25,15 +25,15 @@
 
   <h2 align="center">🔎 Overview & Architecture</h2>
   <p align="center" dir="rtl">
-    <strong>NetGuard</strong> מספקת מענה שלם לניטור ואבטחת תעבורת רשת בשכבות 3, 4 ו-7 של מודל ה-OSI. 
+    <strong>NetGuard</strong> מספקת מענה שלם לניטור, ניתוח ותגובה לאירועי אבטחה ברשת בשכבות 3, 4 ו-7 של מודל ה-OSI. 
     <br>
-    הארכיטקטורה מנוהלת דרך צינור נתונים רציף עם טעינת דשבורדים ותקורת נתונים אוטומטית (Automated Provisioning):
+    הארכיטקטורה מבוססת צינור נתונים רציף (Pipeline) המפריד בין לכידת החבילות, עיבודן בזמן אמת, והזנתן למערכת הוויזואליזציה:
   </p> <br>
 
   <div align="center" dir="ltr">
     <p>
       <code>📡 Network Traffic</code> &nbsp;➔&nbsp; 
-      <code>🐍 Python/Scapy Engine</code> &nbsp;➔&nbsp; 
+      <code>🐍 Python Engine (Sniffer + Worker + GC)</code> &nbsp;➔&nbsp; 
       <code>📄 JSON Logs File</code>
     </p>
     <p>
@@ -90,13 +90,19 @@
         <td align="left">📡 <strong>Network</strong></td>
         <td align="left">Real-time L2-L7 Sniffing</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">לכידה וניתוח של תעבורת IP, TCP, UDP ו-DNS בזמן אמת.</td>
+        <td align="right" dir="rtl">לכידה וניתוח של תעבורת IP, TCP, UDP ו-DNS בזמן אמת תוך מניעת הצפת זיכרון (<code>store=0</code>).</td>
       </tr>
       <tr>
         <td align="left">🛡️ <strong>Cyber Security</strong></td>
-        <td align="left">Sliding-Window Anomaly Detection</td>
+        <td align="left">Sliding-Window Detection</td>
         <td align="center">✅</td>
         <td align="right" dir="rtl">זיהוי <strong>DoS (SYN Flood)</strong> וסריקת פורטים מבוסס חלון זמן נייד מדויק.</td>
+      </tr>
+      <tr>
+        <td align="left">⚡ <strong>Active Defense</strong></td>
+        <td align="left">Dynamic IP Isolation</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">מנגנון סיכול אקטיבי המבודד כתובות תוקפות לזמן קצוב (Blacklist עם תפוגה אוטומטית).</td>
       </tr>
       <tr>
         <td align="left">🔍 <strong>DPI Engine</strong></td>
@@ -105,16 +111,16 @@
         <td align="right" dir="rtl">סריקת Raw Payload ברמת ה-Bytes לזיהוי מחרוזות חשודות (SQLi, Credentials, Path Traversal).</td>
       </tr>
       <tr>
+        <td align="left">⚙️ <strong>Architecture</strong></td>
+        <td align="left">Producer-Consumer & Thread-Safety</td>
+        <td align="center">✅</td>
+        <td align="right" dir="rtl">שימוש ב-<code>Queue</code> מוגבל, מנעולי <code>threading.Lock</code> ו-Thread רקע ייעודי (Garbage Collector) למניעת זליגות זיכרון.</td>
+      </tr>
+      <tr>
         <td align="left">📊 <strong>Observability & IaC</strong></td>
         <td align="left">Dashboard as Code (Grafana + Loki)</td>
         <td align="center">✅</td>
-        <td align="right" dir="rtl">חמישה דשבורדים מוגדרים מראש בפורמט JSON סטנדרטי הנטענים אוטומטית (Automated Provisioning) עם ענידת <code>uid: loki</code> אחידה.</td>
-      </tr>
-      <tr>
-        <td align="left">⚙️ <strong>Architecture</strong></td>
-        <td align="left">Producer-Consumer Model</td>
-        <td align="center">✅</td>
-        <td align="right" dir="rtl">שימוש ב-<strong>Threading & Bounded Queue</strong> למניעת Packet Loss והצפת זיכרון.</td>
+        <td align="right" dir="rtl">חמישה דשבורדים מוגדרים מראש בפורמט JSON סטנדרטי הנטענים אוטומטית בעליית ה-Container דרך קבצי ה-Provisioning.</td>
       </tr>
       <tr>
         <td align="left">📝 <strong>Logging</strong></td>
@@ -136,11 +142,13 @@
   <hr>
 
   <div dir="rtl" align="right">
-  <h2 align="center">🛠️ טכנולוגיות וארכיטקטורה</h2>
-      <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets ופיענוח פרוטוקולי תקשורת.</li>
-      <li><strong>Concurrency & Threading:</strong> הפרדת לכידת החבילות מהניתוח באמצעות <code>queue.Queue(maxsize=10000)</code> ומניעת זליגת זיכרון ב-Scapy עם <code>store=0</code>.</li>
+  <h2 align="center">🛠️ טכנולוגיות ודגשים ארכיטקטוניים</h2>
+      <li><strong>Python & Scapy:</strong> לכידת חבילות נתונים ברמת ה-Raw Sockets, פיענוח פרוטוקולי תקשורת, וסריקת עומק ברמת ה-Payload (DPI).</li>
+      <li><strong>Producer-Consumer Architecture:</strong> הפרדה מלאה בין לכידת החבילות לבין ניתוחן באמצעות <code>queue.Queue(maxsize=10000)</code> המונעת Packet Loss באירועי עומס.</li>
+      <li><strong>Thread-Safety & Active Defense:</strong> ניהול מצבי Whitelist/Blacklist וזיהוי אנומליות תחת מנעולים (<code>threading.Lock</code>) למניעת Data Race, לצד חסימה דינמית וזמנית של כתובות IP תוקפות.</li>
+      <li><strong>Background Garbage Collector:</strong> תהליך רקע ייעודי (Garbage Collector Thread) המנקה מבני נתונים ישנים מהזיכרון מדי 30 שניות ומבטיח אפס זליגות זיכרון (Zero-Leak Dynamic Memory Management).</li>
       <li><strong>Promtail & Grafana Loki:</strong> שינוע הלוגים המובנים (JSON Structured Logs) מתיקיית ה-Logs המקומית ואינדוקסם ב-Loki.</li>
-      <li><strong>Dashboards as Code (IaC):</strong> ניהול גרסאות מלא של 5 לוחות הבקרה ב-Git תחת <code>grafana/dashboards/</code> וטעינתם האוטומטית ל-Grafana בעליית ה-Container דרך קבצי ה-Provisioning.</li>
+      <li><strong>Dashboards as Code (IaC):</strong> ניהול גרסאות מלא של 5 לוחות הבקרה ב-Git תחת <code>grafana/dashboards/</code> וטעינתם האוטומטית ל-Grafana בעליית ה-Container.</li>
       <li><strong>Docker Compose Stack:</strong> פריסה בלחיצת כפתור אחת של כל תשתיות ה-Observability.</li>
   </div>
 
