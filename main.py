@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 from collections import defaultdict, deque
@@ -26,16 +27,38 @@ class ColoredConsoleFormatter(logging.Formatter):
         message = super().format(record)
         return f"{color}{message}{Colors.RESET}"
 
+class JsonFileFormatter(logging.Formatter):
+    """פורמטר שמייצר לוגים במבנה JSON מושלם עבור Grafana / Loki"""
+    def format(self, record):
+        log_record = {
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name
+        }
+        
+        # חילוץ שדות דינמיים מתוך ה-extra
+        if hasattr(record, 'src_ip'):
+            log_record['src_ip'] = record.src_ip
+        if hasattr(record, 'event_type'):
+            log_record['event_type'] = record.event_type
+        if hasattr(record, 'details'):
+            log_record['details'] = record.details
+
+        return json.dumps(log_record, ensure_ascii=False)
+
 def setup_logger():
     logger = logging.getLogger("NetworkGuardian")
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
+    # Console Handler (פלט צבעוני לטרמינל)
     ch = logging.StreamHandler()
     ch.setFormatter(ColoredConsoleFormatter('%(asctime)s [%(levelname)s] %(message)s'))
     
-    fh = logging.FileHandler("network_security.log")
-    fh.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))
+    # File Handler (פלט JSON מובנה לקובץ)
+    fh = logging.FileHandler("network_security.json", encoding="utf-8")
+    fh.setFormatter(JsonFileFormatter())
 
     logger.addHandler(ch)
     logger.addHandler(fh)
@@ -46,7 +69,7 @@ class NetworkGuardian:
         self.logger = setup_logger()
         self.packet_queue = Queue(maxsize=10000)
         self.running = True
-        self.lock = threading.Lock() # מנעול לניהול תהליכים מקבילים
+        self.lock = threading.Lock()
         
         self.DOS_THRESHOLD = dos_threshold
         self.SCAN_THRESHOLD = scan_threshold
@@ -55,14 +78,12 @@ class NetworkGuardian:
         self.whitelist = set()
         self.blacklist = {} 
         
-        # מבנה אחיד: IP -> deque of (timestamp, value)
         self.syn_history = defaultdict(deque)
         self.port_history = defaultdict(deque)
 
         self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
 
     def _enqueue_packet(self, pkt):
-        """סינון מקדים (Gatekeeper) לפני הכנסה לתור כדי למנוע צוואר בקבוק"""
         if not pkt.haslayer(IP):
             return
             
@@ -72,15 +93,14 @@ class NetworkGuardian:
         with self.lock:
             if src_ip in self.blacklist:
                 if now < self.blacklist[src_ip]:
-                    return # זורק את הפאקט במקור אם ה-IP חסום
+                    return
                 else:
-                    del self.blacklist[src_ip] # פג תוקף החסימה
+                    del self.blacklist[src_ip]
 
         if not self.packet_queue.full():
             self.packet_queue.put_nowait(pkt)
 
     def _clean_old_records(self, history_deque, now):
-        """ניקוי חלון זמן בגישה אחידה ומהירה"""
         while history_deque and (now - history_deque[0][0]) > self.TIME_WINDOW:
             history_deque.popleft()
 
@@ -96,7 +116,10 @@ class NetworkGuardian:
             try:
                 query = pkt[DNSQR].qname.decode('utf-8', errors='ignore')
                 if not query.endswith(".local."):
-                    self.logger.info(f"[DNS] Device {src_ip} query: {query}")
+                    self.logger.info(
+                        f"[DNS] Device {src_ip} query: {query}",
+                        extra={"src_ip": src_ip, "event_type": "DNS_QUERY", "details": query}
+                    )
             except Exception as e:
                 self.logger.debug(f"[DNS] Parsing error: {e}")
 
@@ -115,11 +138,14 @@ class NetworkGuardian:
             if is_syn:
                 syn_deque = self.syn_history[src_ip]
                 self._clean_old_records(syn_deque, now)
-                syn_deque.append((now, None)) # שימוש ב-Tuple למען תאימות פונקציית הניקוי
+                syn_deque.append((now, None))
 
                 if len(syn_deque) > self.DOS_THRESHOLD:
                     self.blacklist[src_ip] = now + timedelta(minutes=5)
-                    self.logger.critical(f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes")
+                    self.logger.critical(
+                        f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes",
+                        extra={"src_ip": src_ip, "event_type": "DOS_ATTACK", "details": "SYN Flood threshold exceeded"}
+                    )
                     syn_deque.clear()
 
             if dst_port:
@@ -129,7 +155,10 @@ class NetworkGuardian:
 
                 unique_ports = {port for _, port in ports_deque}
                 if len(unique_ports) > self.SCAN_THRESHOLD:
-                    self.logger.warning(f"[PORT SCAN DETECTED] Host {src_ip} scanned {len(unique_ports)} unique ports")
+                    self.logger.warning(
+                        f"[PORT SCAN DETECTED] Host {src_ip} scanned {len(unique_ports)} unique ports",
+                        extra={"src_ip": src_ip, "event_type": "PORT_SCAN", "details": f"{len(unique_ports)} ports scanned"}
+                    )
                     ports_deque.clear()
 
         # 4. Deep Packet Inspection (DPI)
@@ -137,7 +166,11 @@ class NetworkGuardian:
             payload = pkt[Raw].load.lower()
             for kw in self.suspicious_keywords:
                 if kw in payload:
-                    self.logger.warning(f"[SECURITY DPI] Suspicious keyword '{kw.decode('utf-8', errors='ignore')}' from {src_ip}")
+                    kw_str = kw.decode('utf-8', errors='ignore')
+                    self.logger.warning(
+                        f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
+                        extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
+                    )
 
     def packet_worker(self):
         while self.running:
@@ -157,12 +190,11 @@ class NetworkGuardian:
 
         self.logger.info("[*] Worker active. Sniffing interface...")
         try:
-            # סינון BPF (filter="ip") חוסך משאבי CPU ומונע קריאת חבילות L2 (כמו ARP)
             sniff(prn=self._enqueue_packet, store=0, filter="ip")
         except KeyboardInterrupt:
             self.logger.info("Shutting down engine...")
             self.running = False
-            worker.join(timeout=2) # המתנה נקייה לסיום התהליך
+            worker.join(timeout=2)
 
 if __name__ == "__main__":
     guardian = NetworkGuardian()
