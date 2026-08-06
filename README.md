@@ -12,7 +12,7 @@
   <p align="center">
     <img src="https://img.shields.io/badge/Python-3.x-blue?logo=python" alt="Python Badge">
     <img src="https://img.shields.io/badge/Library-Scapy-red" alt="Scapy Badge">
-    <img src="https://img.shields.io/badge/Stack-Docker_Compose-2496ED?logo=docker" alt="Docker Badge">
+    <img src="https://img.shields.io/badge/Stack-Docker_Compose-2496ED?logo=docker" alt="Docker Badge"> <br><br>
     <img src="https://img.shields.io/badge/Monitoring-Grafana-F46800?logo=grafana" alt="Grafana Badge">
     <img src="https://img.shields.io/badge/Logs-Loki_%26_Promtail-orange" alt="Loki Badge">
     <img src="https://img.shields.io/badge/Security-DPI_%26_NIDS-brightgreen" alt="NIDS Badge">
