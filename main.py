@@ -7,6 +7,11 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from queue import Queue, Empty
 from scapy.all import sniff, IP, TCP, UDP, Raw, DNSQR
+try:
+    import colorama
+    colorama.init()
+except ImportError:
+    pass
 
 class Colors:
     RED = "\033[91m"
