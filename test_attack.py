@@ -6,18 +6,32 @@ to validate NIDS detection rules and observability pipelines safely.
 """
 
 from scapy.all import IP, TCP, UDP, Raw, send
+import socket
 import time
 import sys
 
-# Target IP - Change this to your NIDS interface IP or 127.0.0.1 for local testing
-TARGET_IP = "127.0.0.1"
+
+def get_local_ip() -> str:
+    """Dynamically detects the active local IPv4 address."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
 
 
-def print_step(title):
+# Target IP resolution: CLI Argument > Dynamic LAN IP Discovery > Fallback
+TARGET_IP = sys.argv[1] if len(sys.argv) > 1 else get_local_ip()
+
+
+def print_step(title: str) -> None:
     print(f"\n{'='*50}\n[+] {title}\n{'='*50}")
 
 
-def test_dpi_signatures():
+def test_dpi_signatures() -> None:
     """
     Simulates L7 Payload attacks (SQL Injection, Credential Leak, Path Traversal)
     """
@@ -39,7 +53,7 @@ def test_dpi_signatures():
     print("[✔] DPI Test Suite Finished!")
 
 
-def test_port_scan():
+def test_port_scan() -> None:
     """
     Simulates a horizontal port scan across 25 distinct ports (TCP SYN)
     """
@@ -54,7 +68,7 @@ def test_port_scan():
     print("[✔] Port Scan Test Finished!")
 
 
-def test_port_zero():
+def test_port_zero() -> None:
     """
     Simulates edge-case scan targeting TCP Port 0 (Verifies Port 0 Bug Fix)
     """
@@ -67,7 +81,7 @@ def test_port_zero():
     print("[✔] Port 0 Test Finished!")
 
 
-def test_syn_flood():
+def test_syn_flood() -> None:
     """
     Simulates a controlled DoS SYN Flood attack (High rate in short time)
     """
@@ -81,7 +95,7 @@ def test_syn_flood():
     print("[✔] SYN Flood Test Finished!")
 
 
-def main():
+def main() -> None:
     print("🕵️  NetGuard Attack Simulator Initializing...")
     print(f"🎯 Target IP set to: {TARGET_IP}")
     print("⚠️  Safe mode active: Sending synthetic packets only.\n")
