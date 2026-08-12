@@ -152,6 +152,16 @@
 
 <hr>
 
+<h2 align="left">📋 Prerequisites</h2>
+<ul align="left">
+    <li><strong>Docker & Docker Compose:</strong> For running Loki, Promtail, and Grafana.</li>
+    <li><strong>Python 3.10+:</strong> Required for running the NIDS engine and test suite.</li>
+    <li><strong>Administrator / Root Privileges:</strong> Required to capture raw socket traffic via Scapy.</li>
+    <li><strong>Npcap (Windows only):</strong> Required for Scapy to capture raw packets on Windows network adapters.</li>
+</ul>
+
+<hr>
+
 <h2 align="left">📝 JSON Log Structure (Structured Logging)</h2>
 <div align="left">
   <pre><code>{
@@ -193,8 +203,12 @@ sudo .venv/bin/python main.py
 # On Windows (Run PowerShell / CMD as Administrator):
 python main.py
 
-## 6. (Optional) Run Attack Simulator in a separate terminal
-python test_attack.py</code></pre>
+## 6. Run Attack Simulator (in a separate terminal)
+# Automatically targets local active IP:
+python test_attack.py
+
+# Or target a specific IP address explicitly:
+python test_attack.py <TARGET_IP></code></pre>
 </div>
 
 <br>
