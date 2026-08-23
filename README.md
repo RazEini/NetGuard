@@ -167,7 +167,7 @@ python_sniffer/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Raz-Eini/python_sniffer.git
+git clone https://github.com/RazEini/python_sniffer.git
 cd python_sniffer
 
 # 2. Environment Setup
