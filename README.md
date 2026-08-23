@@ -115,7 +115,7 @@ python_sniffer/
       <td align="left">Sliding-Window Detection</td>
       <td align="center">✅</td>
       <td align="left">Detection of <strong>DoS (SYN Flood)</strong> and port scans based on a precise moving time window.</td>
-      <td align="left">O(log n) window lookups</td>
+      <td align="left">O(1) queue operations</td>
     </tr>
     <tr>
       <td align="left">⚡ <strong>Active Defense</strong></td>
