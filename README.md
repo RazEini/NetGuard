@@ -25,11 +25,31 @@
   The architecture is built on a continuous data pipeline that separates packet capture, real-time processing, and feeding data into the visualization system:
 </p>
 
-<p align="center">
-  <code>📡 Network Traffic</code> ➔ <code>🐍 Python Engine (Sniffer + Worker + GC)</code> ➔ <code>📄 JSON Logs File</code>
-  <br><br>
-  <code>📊 Auto-Provisioned Grafana</code> ⬅️ <code>🗄️ Loki DB</code> ⬅️ <code>🔄 Promtail Shipper</code>
-</p>
+```mermaid
+graph TD
+    %% Traffic Input
+    NIC[📡 Network Interface] -->|Raw Packets| SnifferThread[🐍 Sniffer Thread - Scapy store=0]
+    
+    %% Core Engine
+    subgraph Engine [Python NIDS Core Engine]
+        SnifferThread -->|Put Packet| Queue[📦 Bounded Queue maxsize=10000]
+        Queue -->|Get Packet| Worker[⚙️ Worker Threads Pool]
+        
+        subgraph Detection [Detection & Active Defense]
+            Worker -->|L3/L4 Sliding Window| Anomaly[🛡️ DoS / Port Scan Detector]
+            Worker -->|L7 Raw Payload| DPI[🔍 DPI Engine SQLi/Creds]
+            Anomaly & DPI -->|Check/Update| State[🔒 Lock-Guarded State & Blacklist]
+        end
+        
+        GC[🧹 Background GC Thread] -->|Clean Stale State Every 30s| State
+    end
+
+    %% Logging & Observability
+    Worker -->|Write JSON Log| LogFile[📄 logs/netguard.json]
+    Promtail[🔄 Promtail Container] -->|Tail & Ship| LogFile
+    Promtail -->|HTTP/Push| Loki[🗄️ Loki DB Container]
+    Loki -->|PromQL/LogQL| Grafana[📊 Grafana Dashboard as Code]
+```
 
 <hr>
 
