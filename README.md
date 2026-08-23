@@ -22,7 +22,7 @@
 <p align="center">
   <strong>NetGuard</strong> provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
   <br>
-  The architecture is built on a continuous data pipeline that separates packet capture, real-time processing, and feeding data into the visualization system:
+  The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
 </p>
 
 ```mermaid
@@ -32,7 +32,7 @@ graph TD
     
     %% Core Engine
     subgraph Engine [Python NIDS Core Engine]
-        SnifferThread -->|Put Packet| Queue[📦 Bounded Queue maxsize=10000]
+        SnifferThread -->|Non-blocking Put| Queue[📦 Bounded Queue maxsize=10000]
         Queue -->|Get Packet| Worker[⚙️ Worker Threads Pool]
         
         subgraph Detection [Detection & Active Defense]
@@ -41,7 +41,7 @@ graph TD
             Anomaly & DPI -->|Check/Update| State[🔒 Lock-Guarded State & Blacklist]
         end
         
-        GC[🧹 Background GC Thread] -->|Clean Stale State Every 30s| State
+        GC[🧹 Background GC Thread] -->|Synchronous Clean Every 30s| State
     end
 
     %% Logging & Observability
@@ -50,6 +50,15 @@ graph TD
     Promtail -->|HTTP/Push| Loki[🗄️ Loki DB Container]
     Loki -->|PromQL/LogQL| Grafana[📊 Grafana Dashboard as Code]
 ```
+
+<hr>
+
+<h2 align="left">⚡ Performance & Resilience Analysis</h2>
+
+- **Memory Backpressure & Drop Policy** — The engine utilizes a bounded `Queue(maxsize=10000)` combined with `store=0` in Scapy to ensure zero in-memory packet buffering by the sniffer thread. Under high-throughput conditions, excess packets are dropped safely rather than causing Out-Of-Memory (OOM) fatal crashes.
+- **Concurrency & C-Level Unlocking** — Low-level packet capture executes within native socket primitives (C-level libpcap/WinPcap), releasing Python's Global Interpreter Lock (GIL) and allowing the background worker thread and garbage collector thread to execute processing tasks concurrently.
+- **Thread Safety & Granular Locking** — Multi-threaded access to volatile state structures (`syn_history`, `port_history`, `blacklist`) is protected using explicit `threading.Lock` primitives to guarantee atomic read/write state transitions without data races.
+- **Deterministic Resource Cleanup (Garbage Collector)** — Dormant IP records and expired blacklist entries are purged every 30 seconds by a background garbage collection thread in bounded $O(N)$ time, ensuring steady memory utilization under sustained traffic.
 
 <hr>
 
@@ -90,6 +99,7 @@ python_sniffer/
       <th align="left">Feature</th>
       <th align="center">Status</th>
       <th align="left">Description</th>
+      <th align="left">Performance Indicator</th>
     </tr>
   </thead>
   <tbody>
@@ -98,48 +108,56 @@ python_sniffer/
       <td align="left">Real-time L2-L7 Sniffing</td>
       <td align="center">✅</td>
       <td align="left">Real-time capture and analysis of IP, TCP, UDP, and DNS traffic while preventing memory overflow (<code>store=0</code>).</td>
+      <td align="left">Zero-copy capture, O(1) enqueue</td>
     </tr>
     <tr>
       <td align="left">🛡️ <strong>Cyber Security</strong></td>
       <td align="left">Sliding-Window Detection</td>
       <td align="center">✅</td>
       <td align="left">Detection of <strong>DoS (SYN Flood)</strong> and port scans based on a precise moving time window.</td>
+      <td align="left">O(log n) window lookups</td>
     </tr>
     <tr>
       <td align="left">⚡ <strong>Active Defense</strong></td>
       <td align="left">Dynamic IP Isolation</td>
       <td align="center">✅</td>
       <td align="left">Active mitigation mechanism that isolates attacking addresses for a limited time (Blacklist with automatic expiry).</td>
+      <td align="left">O(1) blacklist check</td>
     </tr>
     <tr>
       <td align="left">🔍 <strong>DPI Engine</strong></td>
       <td align="left">Deep Packet Inspection</td>
       <td align="center">✅</td>
       <td align="left">Byte-level Raw Payload scanning to detect suspicious strings (SQLi, Credentials, Path Traversal).</td>
+      <td align="left">O(n) linear payload scan</td>
     </tr>
     <tr>
       <td align="left">⚙️ <strong>Architecture</strong></td>
       <td align="left">Producer-Consumer & Thread-Safety</td>
       <td align="center">✅</td>
       <td align="left">Bounded <code>Queue</code>, <code>threading.Lock</code> locks, and a dedicated background Garbage Collector thread to prevent memory leaks.</td>
+      <td align="left">Bounded queue, backpressure-safe</td>
     </tr>
     <tr>
       <td align="left">📊 <strong>Observability & IaC</strong></td>
       <td align="left">Dashboard as Code (Grafana + Loki)</td>
       <td align="center">✅</td>
       <td align="left">Five pre-defined dashboards in standard JSON format, automatically loaded on container startup via Provisioning files.</td>
+      <td align="left">Instant provisioning on boot</td>
     </tr>
     <tr>
       <td align="left">📝 <strong>Logging</strong></td>
       <td align="left">Structured JSON Dual-Stream</td>
       <td align="center">✅</td>
       <td align="left">Colorized console output alongside structured JSON log writes, tailored for collection by Promtail.</td>
+      <td align="left">Low-overhead async writes</td>
     </tr>
     <tr>
       <td align="left">🧪 <strong>Testing</strong></td>
       <td align="left">Traffic Attack Simulator</td>
       <td align="center">✅</td>
       <td align="left">Simulation script (<code>test_attack.py</code>) that generates synthetic attack traffic to validate detection mechanisms.</td>
+      <td align="left">Configurable synthetic load</td>
     </tr>
   </tbody>
 </table>
@@ -162,7 +180,7 @@ python_sniffer/
 
 - **Docker & Docker Compose** — For running Loki, Promtail, and Grafana.
 - **Python 3.10+** — Required for running the NIDS engine and test suite.
-- **Administrator / Root Privileges** — Required to capture raw socket traffic via Scapy.
+- **Administrator / Root Privileges** — Required to capture raw socket traffic via Scapy (or use the least-privilege `setcap` option below on Linux).
 - **Npcap (Windows only)** — Required for Scapy to capture raw packets on Windows network adapters.
 
 <hr>
@@ -203,8 +221,12 @@ python -m venv .venv
 source .venv/bin/activate    # On Linux/Mac
 pip install -r requirements.txt
 
-# 5. Run NIDS Engine (Requires Administrator / Root)
-# On Linux / Mac:
+# 5. Run NIDS Engine
+# On Linux (Principle of Least Privilege - grant raw socket capability without full sudo):
+sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f .venv/bin/python)
+.venv/bin/python main.py
+
+# Or run directly with root (Linux / Mac):
 sudo .venv/bin/python main.py
 
 # On Windows (Run PowerShell / CMD as Administrator):
