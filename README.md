@@ -3,7 +3,7 @@
 <p align="center">
   A full end-to-end real-time <strong>Network Intrusion Detection System (NIDS)</strong>.
   <br>
-  Combines a Multi-threaded Python (Scapy) capture and analysis engine with <strong>DPI</strong>, Sliding-Window anomaly detection, Active Defense mechanisms, and a fully code-managed monitoring stack (<strong>Dashboard as Code</strong>) on <strong>Docker (Grafana + Loki + Promtail)</strong>.
+  Combines a Multi-threaded Python (Scapy) capture and analysis engine with <strong>DPI (Aho-Corasick)</strong>, Sliding-Window anomaly detection, Active Defense mechanisms, and a fully code-managed monitoring stack (<strong>Dashboard as Code</strong>) on <strong>Docker (Grafana + Loki + Promtail)</strong>.
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ graph TD
         
         subgraph Detection [Detection & Active Defense]
             Worker -->|L3/L4 Sliding Window| Anomaly[🛡️ DoS / Port Scan Detector]
-            Worker -->|L7 Raw Payload| DPI[🔍 DPI Engine SQLi/Creds]
+            Worker -->|L7 Raw Payload| DPI[🔍 DPI Engine Aho-Corasick]
             Anomaly & DPI -->|Check/Update| State[🔒 Lock-Guarded State & Blacklist]
         end
         
@@ -45,7 +45,7 @@ graph TD
     end
 
     %% Logging & Observability
-    Worker -->|Write JSON Log| LogFile[📄 logs/netguard.json]
+    Worker -->|Write JSON Log| LogFile[📄 logs/network_security.json]
     Promtail[🔄 Promtail Container] -->|Tail & Ship| LogFile
     Promtail -->|HTTP/Push| Loki[🗄️ Loki DB Container]
     Loki -->|PromQL/LogQL| Grafana[📊 Grafana Dashboard as Code]
@@ -135,7 +135,7 @@ python_sniffer/
       <td align="left">🔍 <strong>DPI Engine</strong></td>
       <td align="left">Deep Packet Inspection</td>
       <td align="center">✅</td>
-      <td align="left">Byte-level Raw Payload scanning leveraging <strong>Aho-Corasick Automaton</strong> to detect credentials & command injection.</td>
+      <td align="left">Byte-level Raw Payload scanning leveraging an <strong>Aho-Corasick Automaton</strong> to search for multiple credential/injection patterns in parallel, detecting credentials & command injection.</td>
       <td align="left">O(N+M) string matching</td>
     </tr>
     <tr>
@@ -156,7 +156,7 @@ python_sniffer/
       <td align="left">📝 <strong>Logging</strong></td>
       <td align="left">Structured JSON Dual-Stream</td>
       <td align="center">✅</td>
-      <td align="left">Colorized console output alongside structured JSON log writes, tailored for collection by Promtail.</td>
+      <td align="left">Colorized console output alongside structured JSON log writes (<code>logs/network_security.json</code>), tailored for collection by Promtail.</td>
       <td align="left">Low-overhead async writes</td>
     </tr>
     <tr>
