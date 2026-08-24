@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 NetGuard NIDS - Safe Attack Simulator Script
-Simulates various attack patterns (DPI, Port Scanning, SYN Flood, Port 0)
-to validate NIDS detection rules and observability pipelines safely.
+Simulates various attack patterns (DPI, Port Scanning, Stealth Scans, 
+DNS Tunneling, SYN Flood, Port 0) to validate NIDS detection rules 
+and observability pipelines safely.
 """
 
-from scapy.all import IP, TCP, UDP, Raw, send
+from scapy.all import IP, TCP, UDP, Raw, DNS, DNSQR, send
 import socket
 import time
 import sys
@@ -68,6 +69,42 @@ def test_port_scan() -> None:
     print("[✔] Port Scan Test Finished!")
 
 
+def test_stealth_scans() -> None:
+    """
+    Simulates TCP Stealth Scans (NULL, FIN, XMAS)
+    """
+    print_step("Testing Stealth Scans (NULL, FIN, XMAS)")
+
+    scans = [
+        ("NULL Scan", TCP(dport=80, flags="")),
+        ("FIN Scan", TCP(dport=80, flags="F")),
+        ("XMAS Scan", TCP(dport=80, flags="FPU"))
+    ]
+
+    for name, tcp_layer in scans:
+        print(f"  [>] Sending {name} packet...")
+        pkt = IP(dst=TARGET_IP) / tcp_layer
+        send(pkt, verbose=False)
+        time.sleep(0.2)
+
+    print("[✔] Stealth Scans Test Finished!")
+
+
+def test_dns_tunneling() -> None:
+    """
+    Simulates DNS Tunneling (High Entropy / Exfiltration Subdomain Query)
+    """
+    print_step("Testing DNS Tunneling & Entropy Detection")
+
+    suspicious_domain = "a8f9x2z1q9m4k7v0p3w8x1z9c2v4b6n8m0q2w4e6r8t0y2.malicious-exfil-domain.com"
+    print(f"  [>] Sending high-entropy DNS query: {suspicious_domain[:35]}...")
+
+    pkt = IP(dst=TARGET_IP) / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname=suspicious_domain))
+    send(pkt, verbose=False)
+
+    print("[✔] DNS Tunneling Test Finished!")
+
+
 def test_port_zero() -> None:
     """
     Simulates edge-case scan targeting TCP Port 0 (Verifies Port 0 Bug Fix)
@@ -105,6 +142,12 @@ def main() -> None:
         time.sleep(1)
 
         test_port_scan()
+        time.sleep(1)
+
+        test_stealth_scans()
+        time.sleep(1)
+
+        test_dns_tunneling()
         time.sleep(1)
 
         test_port_zero()
