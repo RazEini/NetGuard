@@ -92,6 +92,8 @@ python_sniffer/
 
 <h2 align="center">🚀 Core Features</h2>
 
+<h2 align="center">🚀 Core Features</h2>
+
 <table align="center">
   <thead>
     <tr>
@@ -112,10 +114,17 @@ python_sniffer/
     </tr>
     <tr>
       <td align="left">🛡️ <strong>Cyber Security</strong></td>
-      <td align="left">Sliding-Window Detection</td>
+      <td align="left">Sliding-Window & Stealth Detection</td>
       <td align="center">✅</td>
-      <td align="left">Detection of <strong>DoS (SYN Flood)</strong> and port scans based on a precise moving time window.</td>
+      <td align="left">Detects <strong>DoS (SYN Flood)</strong>, standard port scans, and <strong>Stealth Scans (NULL, FIN, XMAS)</strong> via moving time windows.</td>
       <td align="left">O(1) queue operations</td>
+    </tr>
+    <tr>
+      <td align="left">🧬 <strong>DNS Security</strong></td>
+      <td align="left">DNS Tunneling Detection</td>
+      <td align="center">✅</td>
+      <td align="left">Shannon Entropy calculation & query length evaluation to catch exfiltration over DNS.</td>
+      <td align="left">O(N) entropy check</td>
     </tr>
     <tr>
       <td align="left">⚡ <strong>Active Defense</strong></td>
@@ -128,8 +137,8 @@ python_sniffer/
       <td align="left">🔍 <strong>DPI Engine</strong></td>
       <td align="left">Deep Packet Inspection</td>
       <td align="center">✅</td>
-      <td align="left">Byte-level Raw Payload scanning to detect suspicious strings (SQLi, Credentials, Path Traversal).</td>
-      <td align="left">O(n) linear payload scan</td>
+      <td align="left">Byte-level Raw Payload scanning leveraging <strong>Aho-Corasick Automaton</strong> to detect credentials & command injection.</td>
+      <td align="left">O(N+M) string matching</td>
     </tr>
     <tr>
       <td align="left">⚙️ <strong>Architecture</strong></td>
