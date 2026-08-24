@@ -1,3 +1,4 @@
+import math
 import json
 import logging
 import os
@@ -7,11 +8,19 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from queue import Queue, Empty
 from scapy.all import sniff, IP, TCP, UDP, Raw, DNSQR
+
 try:
     import colorama
     colorama.init()
 except ImportError:
     pass
+
+try:
+    import ahocorasick
+    HAS_AHOCORASICK = True
+except ImportError:
+    HAS_AHOCORASICK = False
+
 
 class Colors:
     RED = "\033[91m"
@@ -20,6 +29,7 @@ class Colors:
     CYAN = "\033[96m"
     MAGENTA = "\033[95m"
     RESET = "\033[0m"
+
 
 class ColoredConsoleFormatter(logging.Formatter):
     COLOR_MAP = {
@@ -34,23 +44,25 @@ class ColoredConsoleFormatter(logging.Formatter):
         message = super().format(record)
         return f"{color}{message}{Colors.RESET}"
 
+
 class JsonFileFormatter(logging.Formatter):
     def format(self, record):
         log_record = {
             "timestamp": datetime.fromtimestamp(record.created).isoformat(),
             "level": record.levelname,
-            "message": record.getMessage(),
+            "message": str(record.getMessage()),
             "logger": record.name
         }
-        
+
         if hasattr(record, 'src_ip'):
-            log_record['src_ip'] = record.src_ip
+            log_record['src_ip'] = str(record.src_ip)
         if hasattr(record, 'event_type'):
-            log_record['event_type'] = record.event_type
+            log_record['event_type'] = str(record.event_type)
         if hasattr(record, 'details'):
-            log_record['details'] = record.details
+            log_record['details'] = str(record.details)
 
         return json.dumps(log_record, ensure_ascii=False)
+
 
 def setup_logger():
     logger = logging.getLogger("NetworkGuardian")
@@ -61,7 +73,7 @@ def setup_logger():
 
     ch = logging.StreamHandler()
     ch.setFormatter(ColoredConsoleFormatter('%(asctime)s [%(levelname)s] %(message)s'))
-    
+
     fh = logging.FileHandler(os.path.join("logs", "network_security.json"), encoding="utf-8")
     fh.setFormatter(JsonFileFormatter())
 
@@ -69,25 +81,51 @@ def setup_logger():
     logger.addHandler(fh)
     return logger
 
+
+def calculate_entropy(text: str) -> float:
+    """Calculates Shannon Entropy of a string to detect encrypted/encoded DNS subdomains."""
+    if not text:
+        return 0.0
+    entropy = 0.0
+    text_len = len(text)
+    frequencies = defaultdict(int)
+    for char in text:
+        frequencies[char] += 1
+    for count in frequencies.values():
+        p = count / text_len
+        entropy -= p * math.log2(p)
+    return entropy
+
+
 class NetworkGuardian:
     def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10, cleanup_interval_sec=30):
         self.logger = setup_logger()
         self.packet_queue = Queue(maxsize=10000)
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
-        
+
         self.DOS_THRESHOLD = dos_threshold
         self.SCAN_THRESHOLD = scan_threshold
         self.TIME_WINDOW = timedelta(seconds=time_window_sec)
         self.CLEANUP_INTERVAL = cleanup_interval_sec
-        
+
         self.whitelist = set()
         self.blacklist = {}  # {ip: unblock_time}
-        
+
         self.syn_history = defaultdict(deque)
         self.port_history = defaultdict(deque)
 
         self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
+        
+        # Build Aho-Corasick Automaton for O(N) DPI
+        if HAS_AHOCORASICK:
+            self.automaton = ahocorasick.Automaton()
+            for idx, key in enumerate(self.suspicious_keywords):
+                self.automaton.add_word(key, (idx, key))
+            self.automaton.make_automaton()
+        else:
+            self.automaton = None
+            self.logger.info("[+] Note: 'pyahocorasick' library not found. Falling back to native string searching.")
 
     def _is_blacklisted(self, src_ip, now):
         """Helper function to evaluate blacklist state under lock."""
@@ -99,21 +137,24 @@ class NetworkGuardian:
         return False
 
     def _enqueue_packet(self, pkt):
-        if not pkt.haslayer(IP):
+        if not pkt.haslayer(IP) or self.packet_queue.full():
             return
-            
+
         src_ip = pkt[IP].src
         now = datetime.now()
-        
+
+        # Fast non-blocking check before acquiring lock
+        if src_ip in self.whitelist:
+            return
+
         with self.lock:
-            if src_ip in self.whitelist:
+            if src_ip in self.whitelist or self._is_blacklisted(src_ip, now):
                 return
 
-            if self._is_blacklisted(src_ip, now):
-                return
-
-        if not self.packet_queue.full():
+        try:
             self.packet_queue.put_nowait(pkt)
+        except Exception:
+            pass  # Queue full, drop packet safely under pressure
 
     def _clean_old_records(self, history_deque, now):
         while history_deque and (now - history_deque[0][0]) > self.TIME_WINDOW:
@@ -123,7 +164,7 @@ class NetworkGuardian:
         while not self.stop_event.is_set():
             time.sleep(self.CLEANUP_INTERVAL)
             now = datetime.now()
-            
+
             with self.lock:
                 # Cleanup SYN history
                 for ip in list(self.syn_history.keys()):
@@ -144,41 +185,81 @@ class NetworkGuardian:
                 for ip in expired_blacklist:
                     del self.blacklist[ip]
 
+    def _check_dpi(self, payload: bytes, src_ip: str):
+        payload_lower = payload.lower()
+        if self.automaton:
+            for end_index, (idx, kw) in self.automaton.iter(payload_lower):
+                kw_str = kw.decode('utf-8', errors='ignore')
+                self.logger.warning(
+                    f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
+                    extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
+                )
+        else:
+            for kw in self.suspicious_keywords:
+                if kw in payload_lower:
+                    kw_str = kw.decode('utf-8', errors='ignore')
+                    self.logger.warning(
+                        f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
+                        extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
+                    )
+
     def analyze_packet(self, pkt):
         now = datetime.now()
         src_ip = pkt[IP].src
 
-        # Fast discard if blacklisted or whitelisted
         with self.lock:
-            if src_ip in self.whitelist:
-                return
-            if self._is_blacklisted(src_ip, now):
+            if src_ip in self.whitelist or self._is_blacklisted(src_ip, now):
                 return
 
-        # DNS Traffic Inspection
+        # 1. DNS Inspection & Tunneling Detection
         if pkt.haslayer(DNSQR):
             try:
                 query = pkt[DNSQR].qname.decode('utf-8', errors='ignore')
                 if not query.endswith(".local."):
-                    self.logger.info(
-                        f"[DNS] Device {src_ip} query: {query}",
-                        extra={"src_ip": src_ip, "event_type": "DNS_QUERY", "details": query}
-                    )
+                    entropy = calculate_entropy(query)
+                    if len(query) > 60 or entropy > 4.2:
+                        self.logger.warning(
+                            f"[DNS TUNNELING SUSPECT] Host {src_ip} query len={len(query)} entropy={entropy:.2f}: {query}",
+                            extra={"src_ip": src_ip, "event_type": "DNS_TUNNELING", "details": f"Len: {len(query)}, Entropy: {entropy:.2f}"}
+                        )
+                    else:
+                        self.logger.info(
+                            f"[DNS] Device {src_ip} query: {query}",
+                            extra={"src_ip": src_ip, "event_type": "DNS_QUERY", "details": query}
+                        )
             except Exception as e:
                 self.logger.debug(f"[DNS] Parsing error: {e}")
 
         dst_port = None
         is_syn = False
+        tcp_flags = None
 
         if pkt.haslayer(TCP):
             dst_port = pkt[TCP].dport
-            if pkt[TCP].flags & 0x02:  # SYN Flag
+            tcp_flags = int(pkt[TCP].flags)
+            if tcp_flags & 0x02:  # SYN Flag
                 is_syn = True
+
+            # 2. Stealth Scan Detection (NULL, FIN, XMAS)
+            stealth_type = None
+            if tcp_flags == 0:
+                stealth_type = "NULL Scan"
+            elif tcp_flags == 0x01:
+                stealth_type = "FIN Scan"
+            elif tcp_flags == 0x29:  # FIN + PSH + URG
+                stealth_type = "XMAS Scan"
+
+            if stealth_type:
+                self.logger.warning(
+                    f"[STEALTH SCAN DETECTED] {stealth_type} from {src_ip} to port {dst_port}",
+                    extra={"src_ip": src_ip, "event_type": "STEALTH_SCAN", "details": f"{stealth_type} on port {dst_port}"}
+                )
+
         elif pkt.haslayer(UDP):
             dst_port = pkt[UDP].dport
 
+        # 3. DoS & Port Scan Detection
         with self.lock:
-            # 1. DoS / SYN Flood Detection
             if is_syn:
                 syn_deque = self.syn_history[src_ip]
                 self._clean_old_records(syn_deque, now)
@@ -192,7 +273,6 @@ class NetworkGuardian:
                     )
                     syn_deque.clear()
 
-            # 2. Port Scan Detection (explicit None check for port 0)
             if dst_port is not None:
                 ports_deque = self.port_history[src_ip]
                 self._clean_old_records(ports_deque, now)
@@ -206,16 +286,9 @@ class NetworkGuardian:
                     )
                     ports_deque.clear()
 
-        # 3. Deep Packet Inspection (DPI)
+        # 4. Deep Packet Inspection (DPI)
         if pkt.haslayer(Raw):
-            payload = pkt[Raw].load.lower()
-            for kw in self.suspicious_keywords:
-                if kw in payload:
-                    kw_str = kw.decode('utf-8', errors='ignore')
-                    self.logger.warning(
-                        f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
-                        extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
-                    )
+            self._check_dpi(pkt[Raw].load, src_ip)
 
     def packet_worker(self):
         while not self.stop_event.is_set():
@@ -228,29 +301,35 @@ class NetworkGuardian:
             except Exception as e:
                 self.logger.error(f"[WORKER ERROR] {e}")
 
-    def start(self):
+    def start(self, num_workers=4):
         self.logger.info("NetworkGuardian Engine Starting...")
-        
-        worker = threading.Thread(target=self.packet_worker, daemon=True)
-        worker.start()
 
-        cleanup_thread = threading.Thread(target=self._cleanup_worker, daemon=True)
+        # Initialize Worker Pool for multi-threading throughput
+        workers = []
+        for i in range(num_workers):
+            w = threading.Thread(target=self.packet_worker, daemon=True, name=f"Worker-{i}")
+            w.start()
+            workers.append(w)
+
+        cleanup_thread = threading.Thread(target=self._cleanup_worker, daemon=True, name="CleanupGC")
         cleanup_thread.start()
 
-        self.logger.info("[*] Engine Active. Sniffing packets...")
+        self.logger.info(f"[*] Engine Active. Listening with {num_workers} worker threads...")
         try:
             sniff(
-                prn=self._enqueue_packet, 
-                store=0, 
-                filter="ip", 
+                prn=self._enqueue_packet,
+                store=0,
+                filter="ip",
                 stop_filter=lambda _: self.stop_event.is_set()
             )
         except KeyboardInterrupt:
             self.logger.info("Shutting down engine...")
             self.stop_event.set()
-            worker.join(timeout=2)
+            for w in workers:
+                w.join(timeout=2)
             cleanup_thread.join(timeout=2)
+
 
 if __name__ == "__main__":
     guardian = NetworkGuardian()
-    guardian.start()
+    guardian.start(num_workers=4)
