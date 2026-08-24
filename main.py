@@ -218,8 +218,11 @@ class NetworkGuardian:
         # 1. DNS Inspection & Tunneling Detection
         if pkt.haslayer(DNSQR):
             try:
-                query = pkt[DNSQR].qname.decode('utf-8', errors='ignore')
-                if not query.endswith(".local."):
+                raw_query = pkt[DNSQR].qname
+                # סינון תווים שאינם ASCII מודפסים
+                query = raw_query.decode('ascii', errors='ignore').strip('.')
+
+                if query and not query.endswith("local"):
                     entropy = calculate_entropy(query)
                     if len(query) > 60 or entropy > 4.2:
                         self.logger.warning(
