@@ -116,13 +116,16 @@ class NetworkGuardian:
         self.port_history = defaultdict(deque)
 
         self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
-        
-        # Build Aho-Corasick Automaton for O(N) DPI
+
+        # Build Aho-Corasick Automaton for O(N) DPI safely
         if HAS_AHOCORASICK:
             self.automaton = ahocorasick.Automaton()
             for idx, key in enumerate(self.suspicious_keywords):
-                self.automaton.add_word(key, (idx, key))
+                # pyahocorasick requires string keys
+                key_str = key.decode('utf-8', errors='ignore') if isinstance(key, bytes) else str(key)
+                self.automaton.add_word(key_str, (idx, key_str))
             self.automaton.make_automaton()
+            self.logger.info("[+] Aho-Corasick DPI Engine initialized successfully.")
         else:
             self.automaton = None
             self.logger.info("[+] Note: 'pyahocorasick' library not found. Falling back to native string searching.")
@@ -186,17 +189,18 @@ class NetworkGuardian:
                     del self.blacklist[ip]
 
     def _check_dpi(self, payload: bytes, src_ip: str):
-        payload_lower = payload.lower()
+        payload_lower_str = payload.lower().decode('utf-8', errors='ignore')
+        
         if self.automaton:
-            for end_index, (idx, kw) in self.automaton.iter(payload_lower):
-                kw_str = kw.decode('utf-8', errors='ignore')
+            for end_index, (idx, kw_str) in self.automaton.iter(payload_lower_str):
                 self.logger.warning(
                     f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
                     extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
                 )
         else:
+            payload_lower_bytes = payload.lower()
             for kw in self.suspicious_keywords:
-                if kw in payload_lower:
+                if kw in payload_lower_bytes:
                     kw_str = kw.decode('utf-8', errors='ignore')
                     self.logger.warning(
                         f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
