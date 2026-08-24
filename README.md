@@ -92,8 +92,6 @@ python_sniffer/
 
 <h2 align="center">🚀 Core Features</h2>
 
-<h2 align="center">🚀 Core Features</h2>
-
 <table align="center">
   <thead>
     <tr>
