@@ -34,3 +34,8 @@ logs/
 
 # Exceptions: Allow Grafana dashboards to be tracked by Git
 !grafana/dashboards/*.json
+
+# Compiled C/C++ files
+*.so
+*.dll
+*.o
