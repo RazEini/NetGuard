@@ -1,4 +1,5 @@
 import ctypes
+import gc
 import os
 from pathlib import Path
 import sys
@@ -17,8 +18,6 @@ if not lib_path.exists():
 
 c_lib = ctypes.CDLL(str(lib_path))
 
-# Define C Function Signature for inspect_batch:
-# int inspect_batch(const char** payloads, const int* lengths, int count, int* results)
 c_lib.inspect_batch.argtypes = [
     ctypes.POINTER(ctypes.c_char_p),
     ctypes.POINTER(ctypes.c_int),
@@ -49,9 +48,15 @@ def inspect_payload_py(payload: bytes) -> int:
 
 
 def run_python_benchmark(payloads: list[bytes]) -> float:
-    start_time = time.perf_counter()
-    _ = [inspect_payload_py(p) for p in payloads]
-    end_time = time.perf_counter()
+    # Disable GC and clean memory prior to execution
+    gc.collect()
+    gc.disable()
+    try:
+        start_time = time.perf_counter()
+        _ = [inspect_payload_py(p) for p in payloads]
+        end_time = time.perf_counter()
+    finally:
+        gc.enable()
     return end_time - start_time
 
 
@@ -61,7 +66,6 @@ def run_python_benchmark(payloads: list[bytes]) -> float:
 def prepare_c_buffers(payloads: list[bytes]):
     count = len(payloads)
 
-    # Pre-allocate contiguous C arrays to avoid list unpacking overhead
     payload_ptrs = (ctypes.c_char_p * count)()
     lengths = (ctypes.c_int * count)()
     results = (ctypes.c_int * count)()
@@ -74,44 +78,53 @@ def prepare_c_buffers(payloads: list[bytes]):
 
 
 def run_c_batch_benchmark(payload_ptrs, lengths, count, results) -> float:
-    # Benchmark EXCLUSIVELY the C engine execution time
-    start_time = time.perf_counter()
-    c_lib.inspect_batch(payload_ptrs, lengths, count, results)
-    end_time = time.perf_counter()
+    gc.collect()
+    gc.disable()
+    try:
+        start_time = time.perf_counter()
+        c_lib.inspect_batch(payload_ptrs, lengths, count, results)
+        end_time = time.perf_counter()
+    finally:
+        gc.enable()
 
     return end_time - start_time
 
 
 # ---------------------------------------------------------------------------
-# 4. Benchmark Execution & Comparison
+# 4. Benchmark Execution & Comparison (Averaged & Stable)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     NUM_PACKETS = 100_000
+    NUM_RUNS = 5
 
-    # Synthetic Dataset Generation (Mix of clean & malicious payloads)
     sample_clean = b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Mozilla/5.0\r\n\r\n"
     sample_malicious = b"POST /login HTTP/1.1\r\nHost: example.com\r\n\r\nusername=admin' OR '1'='1"
 
-    print(f"=== NetGuard DPI Benchmark ({NUM_PACKETS:,} Packets) ===")
+    print(f"=== NetGuard DPI Benchmark ({NUM_PACKETS:,} Packets | Averaged over {NUM_RUNS} runs) ===")
 
     test_payloads = [
         sample_malicious if i % 10 == 0 else sample_clean
         for i in range(NUM_PACKETS)
     ]
 
-    # Run Python Benchmark
-    py_time = run_python_benchmark(test_payloads)
-    py_pps = NUM_PACKETS / py_time
-    print(f"🐍 Python Engine:  {py_time:.4f} sec | {py_pps:,.0f} Packets/sec")
-
-    # Prepare C Buffers (Out of measurement scope to eliminate Python setup overhead)
     c_buffers = prepare_c_buffers(test_payloads)
 
-    # Run C Batch Benchmark
-    c_time = run_c_batch_benchmark(*c_buffers)
-    c_pps = NUM_PACKETS / c_time
-    print(f"⚡ C Extension:     {c_time:.4f} sec | {c_pps:,.0f} Packets/sec")
+    # Warmup runs to fill CPU caches
+    _ = run_python_benchmark(test_payloads)
+    _ = run_c_batch_benchmark(*c_buffers)
 
-    # Results
-    speedup = py_time / c_time if c_time > 0 else 0
+    # Multi-run evaluation for Python
+    py_times = [run_python_benchmark(test_payloads) for _ in range(NUM_RUNS)]
+    py_avg_time = sum(py_times) / NUM_RUNS
+    py_pps = NUM_PACKETS / py_avg_time
+    print(f"🐍 Python Engine:  {py_avg_time:.4f} sec | {py_pps:,.0f} Packets/sec (Avg)")
+
+    # Multi-run evaluation for C
+    c_times = [run_c_batch_benchmark(*c_buffers) for _ in range(NUM_RUNS)]
+    c_avg_time = sum(c_times) / NUM_RUNS
+    c_pps = NUM_PACKETS / c_avg_time
+    print(f"⚡ C Extension:     {c_avg_time:.4f} sec | {c_pps:,.0f} Packets/sec (Avg)")
+
+    # Stable Speedup
+    speedup = py_avg_time / c_avg_time if c_avg_time > 0 else 0
     print(f"🚀 Speedup Factor: {speedup:.2f}x faster with C Extension!")
