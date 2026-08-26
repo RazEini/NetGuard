@@ -62,20 +62,20 @@ graph TD
 
 ## 🏎️ DPI Native C Engine Performance
 
-- **Batch Processing & FFI Optimization** — By eliminating Python FFI execution overhead and passing contiguous memory blocks directly to native C primitives, payload scanning avoids GIL bottlenecks.
+- **Batch Processing & Bounds-Checked Safety** — By eliminating Python FFI execution overhead and passing contiguous memory blocks directly to native C primitives, payload scanning avoids GIL bottlenecks. The engine uses bounds-checked `memchr`/`memcmp` scanning to prevent Out-Of-Bounds reads and Null-Byte truncation issues on raw binary network traffic.
 - **Micro-Benchmark Results (100,000 Packets Evaluation)**:
 
 | Engine Implementation | Execution Time | Throughput | Acceleration |
 | :--- | :--- | :--- | :--- |
-| 🐍 **Python Pure** | `0.0675 sec` | `1,481,530 Packets/sec` | Baseline (1.0x) |
-| ⚡ **Native C Extension** | `0.0016 sec` | `62,425,870 Packets/sec` | **42.14x Faster** |
+| 🐍 **Python Pure** | `0.3134 sec` | `319,038 Packets/sec` | Baseline (1.0x) |
+| ⚡ **Native C Extension (Safe)** | `0.0395 sec` | `2,532,165 Packets/sec` | **7.94x Faster** |
 
 > **Run Benchmark Locally:**
 > ```bash
 > # Linux / macOS
 > make -C c_src
 > # Windows (GCC)
-> gcc -shared -O3 -o libdpi.dll c_src/dpi.c
+> gcc -shared -O3 -march=native -o libdpi.dll c_src/dpi.c
 >
 > python benchmark_dpi.py
 > ```
@@ -122,7 +122,7 @@ python_sniffer/
 | 🛡️ **Cyber Security** | Sliding-Window & Stealth Detection | ✅ | Detects **DoS (SYN Flood)**, standard port scans, and **Stealth Scans (NULL, FIN, XMAS)** via moving time windows. | O(1) queue operations |
 | 🧬 **DNS Security** | DNS Tunneling Detection | ✅ | Shannon Entropy calculation & query length evaluation to catch exfiltration over DNS. | O(N) entropy check |
 | ⚡ **Active Defense** | Dynamic IP Isolation | ✅ | Active mitigation mechanism that isolates attacking addresses for a limited time (Blacklist with automatic expiry). | O(1) blacklist check |
-| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Byte-level Raw Payload scanning leveraging a **Native C Extension (Batch-Optimized)** to search for multiple credential/injection patterns in parallel, detecting credentials & command injection. | O(N+M) string matching, 42x native acceleration |
+| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Byte-level Raw Payload scanning leveraging a **Native C Extension (Batch-Optimized)** to search for multiple credential/injection patterns in parallel, detecting credentials & command injection. | O(N+M) string matching, 8x-10x native acceleration (Memory-Safe Bounds Checked) |
 | ⚙️ **Architecture** | Producer-Consumer & Thread-Safety | ✅ | Bounded `Queue`, `threading.Lock` locks, and a dedicated background Garbage Collector thread to prevent memory leaks. | Bounded queue, backpressure-safe |
 | 📊 **Observability & IaC** | Dashboard as Code (Grafana + Loki) | ✅ | Five pre-defined dashboards in standard JSON format, automatically loaded on container startup via Provisioning files. | Instant provisioning on boot |
 | 📝 **Logging** | Structured JSON Dual-Stream | ✅ | Colorized console output alongside structured JSON log writes (`logs/network_security.json`), tailored for collection by Promtail. | Low-overhead async writes |
@@ -190,9 +190,9 @@ source .venv/bin/activate    # On Linux/Mac
 pip install -r requirements.txt
 
 # 5. Compile the Native C DPI Engine & Run Benchmark (Optional)
-make -C c_src                                # Linux / macOS
-gcc -shared -O3 -o libdpi.dll c_src/dpi.c    # Windows
-python benchmark_dpi.py                      # Verify 40x speedup
+make -C c_src                                                # Linux / macOS
+gcc -shared -O3 -march=native -o libdpi.dll c_src/dpi.c      # Windows
+python benchmark_dpi.py                                      # Verify ~8x memory-safe speedup
 
 # 6. Run NIDS Engine
 # On Linux (Principle of Least Privilege - grant raw socket capability without full sudo):
