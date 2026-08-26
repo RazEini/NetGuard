@@ -1,4 +1,4 @@
-<h1 align="center">🕵️ NetGuard – Full-Stack NIDS & Security Observability Engine</h1>
+# 🕵️ NetGuard – Full-Stack NIDS & Security Observability Engine
 
 <p align="center">
   A full end-to-end real-time <strong>Network Intrusion Detection System (NIDS)</strong>.
@@ -16,14 +16,12 @@
   <img src="https://img.shields.io/badge/IaC-Dashboards_as_Code-blueviolet" alt="IaC Badge">
 </p>
 
-<hr>
+---
 
-<h2 align="center">🔎 Overview & Architecture</h2>
-<p align="center">
-  <strong>NetGuard</strong> provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
-  <br>
-  The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
-</p>
+## 🔎 Overview & Architecture
+
+**NetGuard** provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
+The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
 
 ```mermaid
 graph TD
@@ -51,18 +49,18 @@ graph TD
     Loki -->|PromQL/LogQL| Grafana[📊 Grafana Dashboard as Code]
 ```
 
-<hr>
+---
 
-<h2 align="left">⚡ Performance & Resilience Analysis</h2>
+## ⚡ Performance & Resilience Analysis
 
 - **Memory Backpressure & Drop Policy** — The engine utilizes a bounded `Queue(maxsize=10000)` combined with `store=0` in Scapy to ensure zero in-memory packet buffering by the sniffer thread. Under high-throughput conditions, excess packets are dropped safely rather than causing Out-Of-Memory (OOM) fatal crashes.
 - **Concurrency & C-Level Unlocking** — Low-level packet capture executes within native socket primitives (C-level libpcap/WinPcap), releasing Python's Global Interpreter Lock (GIL) and allowing the background worker thread and garbage collector thread to execute processing tasks concurrently.
 - **Thread Safety & Granular Locking** — Multi-threaded access to volatile state structures (`syn_history`, `port_history`, `blacklist`) is protected using explicit `threading.Lock` primitives to guarantee atomic read/write state transitions without data races.
 - **Deterministic Resource Cleanup (Garbage Collector)** — Dormant IP records and expired blacklist entries are purged every 30 seconds by a background garbage collection thread in bounded $O(N)$ time, ensuring steady memory utilization under sustained traffic.
 
-<hr>
+---
 
-<h2 align="left">🏎️ DPI Native C Engine Performance</h2>
+## 🏎️ DPI Native C Engine Performance
 
 - **Batch Processing & FFI Optimization** — By eliminating Python FFI execution overhead and passing contiguous memory blocks directly to native C primitives, payload scanning avoids GIL bottlenecks.
 - **Micro-Benchmark Results (100,000 Packets Evaluation)**:
@@ -74,14 +72,17 @@ graph TD
 
 > **Run Benchmark Locally:**
 > ```bash
-> gcc -shared -O3 -o libdpi.dll c_src/dpi.c   # Windows
-> # make -C c_src                             # Linux / Mac
+> # Linux / macOS
+> make -C c_src
+> # Windows (GCC)
+> gcc -shared -O3 -o libdpi.dll c_src/dpi.c
+>
 > python benchmark_dpi.py
 > ```
 
-<hr>
+---
 
-<h2 align="center">📂 Project Structure</h2>
+## 📂 Project Structure
 
 ```text
 python_sniffer/
@@ -111,90 +112,25 @@ python_sniffer/
 └── test_attack.py                  # Traffic Simulator
 ```
 
-<hr>
+---
 
-<h2 align="center">🚀 Core Features</h2>
+## 🚀 Core Features
 
-<table align="center">
-  <thead>
-    <tr>
-      <th align="left">Domain</th>
-      <th align="left">Feature</th>
-      <th align="center">Status</th>
-      <th align="left">Description</th>
-      <th align="left">Performance Indicator</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="left">📡 <strong>Network</strong></td>
-      <td align="left">Real-time L2-L7 Sniffing</td>
-      <td align="center">✅</td>
-      <td align="left">Real-time capture and analysis of IP, TCP, UDP, and DNS traffic while preventing memory overflow (<code>store=0</code>).</td>
-      <td align="left">Zero-copy capture, O(1) enqueue</td>
-    </tr>
-    <tr>
-      <td align="left">🛡️ <strong>Cyber Security</strong></td>
-      <td align="left">Sliding-Window & Stealth Detection</td>
-      <td align="center">✅</td>
-      <td align="left">Detects <strong>DoS (SYN Flood)</strong>, standard port scans, and <strong>Stealth Scans (NULL, FIN, XMAS)</strong> via moving time windows.</td>
-      <td align="left">O(1) queue operations</td>
-    </tr>
-    <tr>
-      <td align="left">🧬 <strong>DNS Security</strong></td>
-      <td align="left">DNS Tunneling Detection</td>
-      <td align="center">✅</td>
-      <td align="left">Shannon Entropy calculation & query length evaluation to catch exfiltration over DNS.</td>
-      <td align="left">O(N) entropy check</td>
-    </tr>
-    <tr>
-      <td align="left">⚡ <strong>Active Defense</strong></td>
-      <td align="left">Dynamic IP Isolation</td>
-      <td align="center">✅</td>
-      <td align="left">Active mitigation mechanism that isolates attacking addresses for a limited time (Blacklist with automatic expiry).</td>
-      <td align="left">O(1) blacklist check</td>
-    </tr>
-    <tr>
-      <td align="left">🔍 <strong>DPI Engine</strong></td>
-      <td align="left">Deep Packet Inspection</td>
-      <td align="center">✅</td>
-      <td align="left">Byte-level Raw Payload scanning leveraging a <strong>Native C Extension (Batch-Optimized)</strong> to search for multiple credential/injection patterns in parallel, detecting credentials & command injection.</td>
-      <td align="left">O(N+M) string matching, 42x native acceleration</td>
-    </tr>
-    <tr>
-      <td align="left">⚙️ <strong>Architecture</strong></td>
-      <td align="left">Producer-Consumer & Thread-Safety</td>
-      <td align="center">✅</td>
-      <td align="left">Bounded <code>Queue</code>, <code>threading.Lock</code> locks, and a dedicated background Garbage Collector thread to prevent memory leaks.</td>
-      <td align="left">Bounded queue, backpressure-safe</td>
-    </tr>
-    <tr>
-      <td align="left">📊 <strong>Observability & IaC</strong></td>
-      <td align="left">Dashboard as Code (Grafana + Loki)</td>
-      <td align="center">✅</td>
-      <td align="left">Five pre-defined dashboards in standard JSON format, automatically loaded on container startup via Provisioning files.</td>
-      <td align="left">Instant provisioning on boot</td>
-    </tr>
-    <tr>
-      <td align="left">📝 <strong>Logging</strong></td>
-      <td align="left">Structured JSON Dual-Stream</td>
-      <td align="center">✅</td>
-      <td align="left">Colorized console output alongside structured JSON log writes (<code>logs/network_security.json</code>), tailored for collection by Promtail.</td>
-      <td align="left">Low-overhead async writes</td>
-    </tr>
-    <tr>
-      <td align="left">🧪 <strong>Testing</strong></td>
-      <td align="left">Traffic Attack Simulator</td>
-      <td align="center">✅</td>
-      <td align="left">Simulation script (<code>test_attack.py</code>) that generates synthetic attack traffic to validate detection mechanisms.</td>
-      <td align="left">Configurable synthetic load</td>
-    </tr>
-  </tbody>
-</table>
+| Domain | Feature | Status | Description | Performance Indicator |
+| :--- | :--- | :---: | :--- | :--- |
+| 📡 **Network** | Real-time L2-L7 Sniffing | ✅ | Real-time capture and analysis of IP, TCP, UDP, and DNS traffic while preventing memory overflow (`store=0`). | Zero-copy capture, O(1) enqueue |
+| 🛡️ **Cyber Security** | Sliding-Window & Stealth Detection | ✅ | Detects **DoS (SYN Flood)**, standard port scans, and **Stealth Scans (NULL, FIN, XMAS)** via moving time windows. | O(1) queue operations |
+| 🧬 **DNS Security** | DNS Tunneling Detection | ✅ | Shannon Entropy calculation & query length evaluation to catch exfiltration over DNS. | O(N) entropy check |
+| ⚡ **Active Defense** | Dynamic IP Isolation | ✅ | Active mitigation mechanism that isolates attacking addresses for a limited time (Blacklist with automatic expiry). | O(1) blacklist check |
+| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Byte-level Raw Payload scanning leveraging a **Native C Extension (Batch-Optimized)** to search for multiple credential/injection patterns in parallel, detecting credentials & command injection. | O(N+M) string matching, 42x native acceleration |
+| ⚙️ **Architecture** | Producer-Consumer & Thread-Safety | ✅ | Bounded `Queue`, `threading.Lock` locks, and a dedicated background Garbage Collector thread to prevent memory leaks. | Bounded queue, backpressure-safe |
+| 📊 **Observability & IaC** | Dashboard as Code (Grafana + Loki) | ✅ | Five pre-defined dashboards in standard JSON format, automatically loaded on container startup via Provisioning files. | Instant provisioning on boot |
+| 📝 **Logging** | Structured JSON Dual-Stream | ✅ | Colorized console output alongside structured JSON log writes (`logs/network_security.json`), tailored for collection by Promtail. | Low-overhead async writes |
+| 🧪 **Testing** | Traffic Attack Simulator | ✅ | Simulation script (`test_attack.py`) that generates synthetic attack traffic to validate detection mechanisms. | Configurable synthetic load |
 
-<hr>
+---
 
-<h2 align="center">🛠️ Technologies & Architectural Highlights</h2>
+## 🛠️ Technologies & Architectural Highlights
 
 - **Python & Scapy** — Raw-socket-level packet capture, protocol parsing, and deep payload-level inspection (DPI).
 - **Native C Extension (ctypes)** — Batch-optimized C DPI engine invoked via `ctypes`, delivering a 42x throughput acceleration over the pure-Python implementation for payload scanning.
@@ -205,19 +141,19 @@ python_sniffer/
 - **Dashboards as Code (IaC)** — Full version control of 5 dashboards in Git under `grafana/dashboards/`, automatically loaded into Grafana on container startup.
 - **Docker Compose Stack** — One-click deployment of the entire observability infrastructure.
 
-<hr>
+---
 
-<h2 align="left">📋 Prerequisites</h2>
+## 📋 Prerequisites
 
 - **Docker & Docker Compose** — For running Loki, Promtail, and Grafana.
 - **Python 3.10+** — Required for running the NIDS engine and test suite.
-- **GCC / Make** — Required for compiling the native C DPI engine shared object (`libdpi.dll` / `libdpi.so`).
+- **GCC / Make** — Required for compiling the native C DPI engine shared object (`libdpi.so` on Linux, `libdpi.dylib` on macOS, `libdpi.dll` on Windows).
 - **Administrator / Root Privileges** — Required to capture raw socket traffic via Scapy (or use the least-privilege `setcap` option below on Linux).
 - **Npcap (Windows only)** — Required for Scapy to capture raw packets on Windows network adapters.
 
-<hr>
+---
 
-<h2 align="left">📝 JSON Log Structure (Structured Logging)</h2>
+## 📝 JSON Log Structure (Structured Logging)
 
 ```json
 {
@@ -231,9 +167,9 @@ python_sniffer/
 }
 ```
 
-<hr>
+---
 
-<h2 align="left">⚙️ Installation & Quick Start</h2>
+## ⚙️ Installation & Quick Start
 
 ```bash
 # 1. Clone the repository
@@ -254,7 +190,8 @@ source .venv/bin/activate    # On Linux/Mac
 pip install -r requirements.txt
 
 # 5. Compile the Native C DPI Engine & Run Benchmark (Optional)
-gcc -shared -O3 -o libdpi.dll c_src/dpi.c    # On Windows
+make -C c_src                                # Linux / macOS
+gcc -shared -O3 -o libdpi.dll c_src/dpi.c    # Windows
 python benchmark_dpi.py                      # Verify 40x speedup
 
 # 6. Run NIDS Engine
@@ -276,15 +213,14 @@ python test_attack.py
 python test_attack.py <TARGET_IP>
 ```
 
-📊 **Accessing Grafana:** Open your browser to `http://localhost:3000` (username: `admin`, password set in `.env`). All dashboards will already be loaded and ready to use!
+📊 **Accessing Grafana:** Open your browser to [http://localhost:3000](http://localhost:3000) (username: `admin`, password set in `.env`). All dashboards will already be loaded and ready to use!
 
-<hr>
+---
 
-<h2 align="left">📄 License</h2>
-<p align="left">
-  This project is distributed under the <strong>MIT</strong> license – free to use and modify for educational and research purposes.
-</p>
+## 📄 License
 
-<hr>
+This project is distributed under the **MIT** license – free to use and modify for educational and research purposes.
+
+---
 
 <p align="center"><strong>👨‍💻 Raz Eini (2026)</strong></p>
