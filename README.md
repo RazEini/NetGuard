@@ -1,4 +1,4 @@
-<h1 align="center"> 🕵️ NetGuard – Hybrid Python/C NIDS & Observability Engine </h2>
+<h1 align="center"> 🕵️ NetGuard – Hybrid Python/C NIDS & Observability Engine </h1>
 
 <p align="center">
   A full end-to-end real-time <strong>Network Intrusion Detection System (NIDS)</strong>.
@@ -23,8 +23,10 @@
 **NetGuard** provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
 The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
 
+<!-- 📸 TODO: Add a screenshot or short GIF of the Grafana dashboard in action here -->
+
 ```mermaid
-graph TD
+flowchart TD
     %% Traffic Input
     NIC[📡 Network Interface] -->|Raw Packets| SnifferThread[🐍 Sniffer Thread - Scapy store=0]
     
@@ -74,7 +76,7 @@ graph TD
 > ```bash
 > # Linux / macOS
 > make -C c_src
-> # Windows (GCC)
+> # Windows (GCC) — requires MinGW/MSYS2 installed
 > gcc -shared -O3 -march=native -o libdpi.dll c_src/dpi.c
 >
 > python benchmark_dpi.py
@@ -145,6 +147,7 @@ python_sniffer/
 
 ## 📋 Prerequisites
 
+- **Git** — Required to clone the repository.
 - **Docker & Docker Compose** — For running Loki, Promtail, and Grafana.
 - **Python 3.10+** — Required for running the NIDS engine and test suite.
 - **GCC / Make** — Required for compiling the native C DPI engine shared object (`libdpi.so` on Linux, `libdpi.dylib` on macOS, `libdpi.dll` on Windows).
@@ -191,21 +194,31 @@ pip install -r requirements.txt
 
 # 5. Compile the Native C DPI Engine & Run Benchmark (Optional)
 make -C c_src                                                # Linux / macOS
-gcc -shared -O3 -march=native -o libdpi.dll c_src/dpi.c      # Windows
+gcc -shared -O3 -march=native -o libdpi.dll c_src/dpi.c      # Windows — requires MinGW/MSYS2 installed
 python benchmark_dpi.py                                      # Verify ~8x memory-safe speedup
+```
 
-# 6. Run NIDS Engine
-# On Linux (Principle of Least Privilege - grant raw socket capability without full sudo):
+### 6a. Run NIDS Engine — Linux / macOS
+
+```bash
+# Principle of Least Privilege - grant raw socket capability without full sudo:
 sudo setcap cap_net_raw,cap_net_admin=eip $(readlink -f .venv/bin/python)
 .venv/bin/python main.py
 
-# Or run directly with root (Linux / Mac):
+# Or run directly with root:
 sudo .venv/bin/python main.py
+```
 
-# On Windows (Run PowerShell / CMD as Administrator):
+### 6b. Run NIDS Engine — Windows
+
+```powershell
+# Run PowerShell / CMD as Administrator:
 python main.py
+```
 
-# 7. Run Attack Simulator (in a separate terminal)
+### 7. Run Attack Simulator (in a separate terminal)
+
+```bash
 # Automatically targets local active IP:
 python test_attack.py
 
