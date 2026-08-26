@@ -6,10 +6,10 @@ DNS Tunneling, SYN Flood, Port 0) to validate NIDS detection rules
 and observability pipelines safely.
 """
 
-from scapy.all import IP, TCP, UDP, Raw, DNS, DNSQR, send
 import socket
-import time
 import sys
+import time
+from scapy.all import DNS, DNSQR, IP, TCP, UDP, Raw, send
 
 
 def get_local_ip() -> str:
@@ -25,7 +25,7 @@ def get_local_ip() -> str:
 
 
 # Target IP resolution: CLI Argument > Dynamic LAN IP Discovery > Fallback
-TARGET_IP = sys.argv[1] if len(sys.argv) > 1 else get_local_ip()
+TARGET_IP: str = sys.argv[1] if len(sys.argv) > 1 else get_local_ip()
 
 
 def print_step(title: str) -> None:
@@ -78,7 +78,7 @@ def test_stealth_scans() -> None:
     scans = [
         ("NULL Scan", TCP(dport=80, flags="")),
         ("FIN Scan", TCP(dport=80, flags="F")),
-        ("XMAS Scan", TCP(dport=80, flags="FPU"))
+        ("XMAS Scan", TCP(dport=80, flags="FPU")),
     ]
 
     for name, tcp_layer in scans:
@@ -155,10 +155,10 @@ def main() -> None:
 
         test_syn_flood()
 
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("🎉 All test vectors executed successfully!")
         print("📊 Check your Grafana Dashboard and Loki logs for alerts.")
-        print("="*50)
+        print("=" * 50)
 
     except PermissionError:
         print("\n❌ Error: Permission denied!")
