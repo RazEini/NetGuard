@@ -1,13 +1,14 @@
 <h1 align="center"> 🕵️ NetGuard – Hybrid Python/C NIDS & Observability Engine </h1>
 
 <p align="center">
-  A full end-to-end real-time <strong>Network Intrusion Detection System (NIDS)</strong>.
+  A full end-to-end real-time <strong>Network Intrusion Detection & Prevention System (NIDS/NIPS)</strong>.
   <br>
-  Combines a Multi-threaded Python (Scapy) capture and analysis engine with a <strong>Native C-Extension DPI Engine (Batch-Optimized)</strong>, Sliding-Window anomaly detection, Active Defense mechanisms, and a fully code-managed monitoring stack (<strong>Dashboard as Code</strong>) on <strong>Docker (Grafana + Loki + Promtail)</strong>.
+  Combines a Multi-threaded Python (Scapy) capture and analysis engine with a <strong>Native C-Extension DPI Engine (Batch-Optimized)</strong>, Sliding-Window anomaly detection, OS Firewall Active Defense, and a fully code-managed monitoring stack (<strong>Dashboard as Code</strong>) on <strong>Docker (Grafana + Loki + Promtail)</strong>.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.x-blue?logo=python" alt="Python Badge">
+  <img src="https://img.shields.io/badge/C-Extension_DPI-00599C?logo=c&logoColor=white" alt="C Badge">
   <img src="https://img.shields.io/badge/Library-Scapy-red" alt="Scapy Badge">
   <img src="https://img.shields.io/badge/Stack-Docker_Compose-2496ED?logo=docker" alt="Docker Badge">
   <img src="https://img.shields.io/badge/Monitoring-Grafana-F46800?logo=grafana" alt="Grafana Badge">
@@ -23,24 +24,27 @@
 **NetGuard** provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
 The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
 
-<!-- 📸 TODO: Add a screenshot or short GIF of the Grafana dashboard in action here -->
+<p align="center">
+  <img src="assets/dashboard_preview.png" alt="NetGuard SIEM Grafana Dashboard Overview" width="95%">
+</p>
 
 ```mermaid
 flowchart TD
     %% Traffic Input
     NIC[📡 Network Interface] -->|Raw Packets| SnifferThread[🐍 Sniffer Thread - Scapy store=0]
-    
+
     %% Core Engine
     subgraph Engine [Python NIDS Core Engine]
         SnifferThread -->|Non-blocking Put| Queue[📦 Bounded Queue maxsize=10000]
         Queue -->|Get Packet| Worker[⚙️ Worker Threads Pool]
-        
+
         subgraph Detection [Detection & Active Defense]
             Worker -->|L3/L4 Sliding Window| Anomaly[🛡️ DoS / Port Scan Detector]
             Worker -->|L7 Raw Payload| DPI[⚡ Native C DPI Engine via ctypes]
+            Anomaly -->|Trigger Attack Threshold| Firewall[🧱 OS Firewall Subprocess - netsh / iptables]
             Anomaly & DPI -->|Check/Update| State[🔒 Lock-Guarded State & Blacklist]
         end
-        
+
         GC[🧹 Background GC Thread] -->|Synchronous Clean Every 30s| State
     end
 
@@ -58,6 +62,7 @@ flowchart TD
 - **Memory Backpressure & Drop Policy** — The engine utilizes a bounded `Queue(maxsize=10000)` combined with `store=0` in Scapy to ensure zero in-memory packet buffering by the sniffer thread. Under high-throughput conditions, excess packets are dropped safely rather than causing Out-Of-Memory (OOM) fatal crashes.
 - **Concurrency & C-Level Unlocking** — Low-level packet capture executes within native socket primitives (C-level libpcap/WinPcap), releasing Python's Global Interpreter Lock (GIL) and allowing the background worker thread and garbage collector thread to execute processing tasks concurrently.
 - **Thread Safety & Granular Locking** — Multi-threaded access to volatile state structures (`syn_history`, `port_history`, `blacklist`) is protected using explicit `threading.Lock` primitives to guarantee atomic read/write state transitions without data races.
+- **Active Defense & OS Firewall Integration** — Automatically triggers dynamic OS firewall mitigation rules (`netsh advfirewall` on Windows, `iptables` on Linux) upon identifying DoS/SYN Flood attacks. Commands execute asynchronously in detached daemon threads to keep processing queues zero-latency.
 - **Deterministic Resource Cleanup (Garbage Collector)** — Dormant IP records and expired blacklist entries are purged every 30 seconds by a background garbage collection thread in bounded $O(N)$ time, ensuring steady memory utilization under sustained traffic.
 
 ---
@@ -88,6 +93,8 @@ flowchart TD
 
 ```text
 python_sniffer/
+├── assets/                          # Static Documentation Assets (Dashboard Screenshots)
+│   └── dashboard_preview.png
 ├── benchmark_dpi.py                # Native C vs Python DPI Micro-Benchmark
 ├── c_src/                          # Low-Level Native C Extensions
 │   ├── dpi.c                       # Native C DPI Engine (Batch Engine)
@@ -99,7 +106,7 @@ python_sniffer/
 │       ├── dashboard-Threat Timeline & Severity Levels.json
 │       ├── dashboard-Top Suspicious Source IPs.json
 │       └── dashboard-Total Security Alerts.json
-├── provisioning/                   # Grafana Automated Provisioning Configs
+├── provisioning/                    # Grafana Automated Provisioning Configs
 │   ├── dashboards/
 │   │   └── dashboards.yml
 │   └── datasources/
@@ -123,9 +130,9 @@ python_sniffer/
 | 📡 **Network** | Real-time L2-L7 Sniffing | ✅ | Real-time capture and analysis of IP, TCP, UDP, and DNS traffic while preventing memory overflow (`store=0`). | Zero-copy capture, O(1) enqueue |
 | 🛡️ **Cyber Security** | Sliding-Window & Stealth Detection | ✅ | Detects **DoS (SYN Flood)**, standard port scans, and **Stealth Scans (NULL, FIN, XMAS)** via moving time windows. | O(1) queue operations |
 | 🧬 **DNS Security** | DNS Tunneling Detection | ✅ | Shannon Entropy calculation & query length evaluation to catch exfiltration over DNS. | O(N) entropy check |
-| ⚡ **Active Defense** | Dynamic IP Isolation | ✅ | Active mitigation mechanism that isolates attacking addresses for a limited time (Blacklist with automatic expiry). | O(1) blacklist check |
-| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Byte-level Raw Payload scanning leveraging a **Native C Extension (Batch-Optimized)** to search for multiple credential/injection patterns in parallel, detecting credentials & command injection. | O(N+M) string matching, 8x-10x native acceleration (Memory-Safe Bounds Checked) |
-| ⚙️ **Architecture** | Producer-Consumer & Thread-Safety | ✅ | Bounded `Queue`, `threading.Lock` locks, and a dedicated background Garbage Collector thread to prevent memory leaks. | Bounded queue, backpressure-safe |
+| ⚡ **Active Defense** | Dynamic IP Isolation & OS Firewall | ✅ | Active mitigation mechanism that dynamically injects OS firewall rules (`netsh` / `iptables`) to block malicious hosts upon threshold breach. | Non-blocking async execution, O(1) blacklist check |
+| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Byte-level Raw Payload scanning leveraging a **Native C Extension (Batch-Optimized)** to search for credential leakages and injection patterns in parallel. | O(N+M) string matching, 8x-10x native acceleration |
+| ⚙️ **Architecture** | Producer-Consumer & Thread-Safety | ✅ | Bounded `Queue`, `threading.Lock` primitives, and a dedicated background Garbage Collector thread to prevent memory leaks. | Bounded queue, backpressure-safe |
 | 📊 **Observability & IaC** | Dashboard as Code (Grafana + Loki) | ✅ | Five pre-defined dashboards in standard JSON format, automatically loaded on container startup via Provisioning files. | Instant provisioning on boot |
 | 📝 **Logging** | Structured JSON Dual-Stream | ✅ | Colorized console output alongside structured JSON log writes (`logs/network_security.json`), tailored for collection by Promtail. | Low-overhead async writes |
 | 🧪 **Testing** | Traffic Attack Simulator | ✅ | Simulation script (`test_attack.py`) that generates synthetic attack traffic to validate detection mechanisms. | Configurable synthetic load |
@@ -137,7 +144,7 @@ python_sniffer/
 - **Python & Scapy** — Raw-socket-level packet capture, protocol parsing, and deep payload-level inspection (DPI).
 - **Native C Extension (ctypes)** — Batch-optimized, memory-safe C DPI engine invoked via ctypes, delivering an **8x–10x** bounds-checked throughput acceleration over pure Python.
 - **Producer-Consumer Architecture** — Full separation between packet capture and analysis via `queue.Queue(maxsize=10000)`, preventing packet loss under load.
-- **Thread-Safety & Active Defense** — Whitelist/Blacklist state management and anomaly detection guarded by `threading.Lock` to prevent data races, alongside dynamic, time-limited blocking of attacking IP addresses.
+- **Thread-Safety & Active Defense** — Whitelist/Blacklist state management guarded by `threading.Lock` to prevent data races, integrated with background dynamic OS Firewall rule injection (`netsh` / `iptables`).
 - **Background Garbage Collector** — A dedicated background thread that cleans up stale data structures (Sliding Window History & Blacklist) from memory every 30 seconds, synchronously and thread-safely, ensuring zero memory leaks from dormant IP addresses.
 - **Promtail & Grafana Loki** — Shipping of structured JSON logs from the local logs directory and indexing them in Loki.
 - **Dashboards as Code (IaC)** — Full version control of 5 dashboards in Git under `grafana/dashboards/`, automatically loaded into Grafana on container startup.
@@ -151,7 +158,7 @@ python_sniffer/
 - **Docker & Docker Compose** — For running Loki, Promtail, and Grafana.
 - **Python 3.10+** — Required for running the NIDS engine and test suite.
 - **GCC / Make** — Required for compiling the native C DPI engine shared object (`libdpi.so` on Linux, `libdpi.dylib` on macOS, `libdpi.dll` on Windows).
-- **Administrator / Root Privileges** — Required to capture raw socket traffic via Scapy (or use the least-privilege `setcap` option below on Linux).
+- **Administrator / Root Privileges** — Required to capture raw socket traffic via Scapy and inject OS Firewall blocking rules (or use the least-privilege `setcap` option below on Linux).
 - **Npcap (Windows only)** — Required for Scapy to capture raw packets on Windows network adapters.
 
 ---
