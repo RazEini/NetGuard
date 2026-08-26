@@ -22,7 +22,10 @@ static const Signature SIGNATURES[] = {
     {NULL,          0}
 };
 
-// Safe and hardware-accelerated substring match using bounds-checked memchr
+/* 
+ * Safe substring matching for raw binary payloads.
+ * Avoids strstr() to prevent out-of-bounds reads on non-null-terminated buffers.
+ */
 static inline int safe_payload_contains(const char *payload, size_t payload_len, const char *pattern, size_t pattern_len) {
     if (pattern_len > payload_len || pattern_len == 0) return 0;
 
@@ -30,11 +33,11 @@ static inline int safe_payload_contains(const char *payload, size_t payload_len,
     size_t remaining = payload_len;
 
     while (remaining >= pattern_len) {
-        // Find first char matching pattern using libc assembly optimization
+        // Fast-forward to candidate byte using SIMD-optimized libc memchr
         ptr = (const char *)memchr(ptr, pattern[0], remaining - pattern_len + 1);
         if (!ptr) return 0;
 
-        // Verify full match safely without relying on null-terminator
+        // Exact bound-checked byte comparison
         if (memcmp(ptr, pattern, pattern_len) == 0) {
             return 1;
         }
