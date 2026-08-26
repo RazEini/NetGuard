@@ -143,8 +143,9 @@ class NetworkGuardian:
         if HAS_AHOCORASICK:
             self.automaton = ahocorasick.Automaton()
             for idx, key in enumerate(self.suspicious_keywords):
+                key_str = key.decode('utf-8', errors='ignore').lower() if isinstance(key, bytes) else str(key).lower()
                 key_bytes = key.lower() if isinstance(key, bytes) else key.encode('utf-8').lower()
-                self.automaton.add_word(key_bytes, (idx, key_bytes))
+                self.automaton.add_word(key_str, (idx, key_bytes))
             self.automaton.make_automaton()
             self.logger.info("[+] Aho-Corasick Bytes DPI Engine initialized successfully.")
         else:
@@ -209,16 +210,17 @@ class NetworkGuardian:
                     del self.blacklist[ip]
 
     def _check_dpi(self, payload: bytes, src_ip: str):
-        payload_lower = payload.lower()
+        payload_str = payload.decode('utf-8', errors='ignore').lower()
         
         if self.automaton:
-            for end_index, (idx, kw_bytes) in self.automaton.iter(payload_lower):
+            for end_index, (idx, kw_bytes) in self.automaton.iter(payload_str):
                 kw_str = kw_bytes.decode('utf-8', errors='ignore')
                 self.logger.warning(
                     f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
                     extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
                 )
         else:
+            payload_lower = payload.lower()
             for kw in self.suspicious_keywords:
                 if kw.lower() in payload_lower:
                     kw_str = kw.decode('utf-8', errors='ignore')
