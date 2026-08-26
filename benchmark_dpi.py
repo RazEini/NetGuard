@@ -1,18 +1,21 @@
 import ctypes
 import os
+from pathlib import Path
 import sys
 import time
 
 # ---------------------------------------------------------------------------
 # 1. Load Native C Extension
 # ---------------------------------------------------------------------------
-lib_path = "./libdpi.dll" if sys.platform == "win32" else "./libdpi.so"
+BASE_DIR = Path(__file__).parent.resolve()
+lib_filename = "libdpi.dll" if sys.platform == "win32" else "libdpi.so"
+lib_path = BASE_DIR / lib_filename
 
-if not os.path.exists(lib_path):
+if not lib_path.exists():
     print(f"[-] Shared library not found at {lib_path}. Compile it first.")
     sys.exit(1)
 
-c_lib = ctypes.CDLL(lib_path)
+c_lib = ctypes.CDLL(str(lib_path))
 
 # Define C Function Signature for inspect_batch:
 # int inspect_batch(const char** payloads, const int* lengths, int count, int* results)
@@ -47,7 +50,7 @@ def inspect_payload_py(payload: bytes) -> int:
 
 def run_python_benchmark(payloads: list[bytes]) -> float:
     start_time = time.perf_counter()
-    results = [inspect_payload_py(p) for p in payloads]
+    _ = [inspect_payload_py(p) for p in payloads]
     end_time = time.perf_counter()
     return end_time - start_time
 
@@ -57,8 +60,8 @@ def run_python_benchmark(payloads: list[bytes]) -> float:
 # ---------------------------------------------------------------------------
 def prepare_c_buffers(payloads: list[bytes]):
     count = len(payloads)
-    
-    # Safe allocation without python list unpacking unpacking (*payloads)
+
+    # Pre-allocate contiguous C arrays to avoid list unpacking overhead
     payload_ptrs = (ctypes.c_char_p * count)()
     lengths = (ctypes.c_int * count)()
     results = (ctypes.c_int * count)()
