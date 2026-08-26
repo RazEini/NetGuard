@@ -85,40 +85,44 @@ def setup_logger():
 
 
 def calculate_entropy(text: str) -> float:
-    """Calculates Shannon Entropy of a string to detect encrypted/encoded DNS subdomains."""
+    """Calculates Shannon Entropy of a string."""
     if not text:
         return 0.0
-    entropy = 0.0
     text_len = len(text)
     frequencies = defaultdict(int)
     for char in text:
         frequencies[char] += 1
+    
+    entropy = 0.0
     for count in frequencies.values():
         p = count / text_len
         entropy -= p * math.log2(p)
     return entropy
 
 
-def block_ip_firewall(ip: str):
-    """Active Response: Blocks IP address at OS Firewall level."""
-    system = platform.system().lower()
-    try:
-        if system == "linux":
-            subprocess.run(["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"], check=True)
-        elif system == "windows":
-            subprocess.run([
-                "netsh", "advfirewall", "firewall", "add", "rule",
-                f"name=NetGuard_Block_{ip}", "dir=in", "action=block",
-                f"remoteip={ip}"
-            ], check=True)
-    except Exception:
-        pass  # Failsafe if script isn't running with root/admin privileges
+def block_ip_firewall_async(ip: str):
+    """Executes OS Firewall block in a background thread to avoid blocking worker queue."""
+    def _block():
+        system = platform.system().lower()
+        try:
+            if system == "linux":
+                subprocess.run(["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif system == "windows":
+                subprocess.run([
+                    "netsh", "advfirewall", "firewall", "add", "rule",
+                    f"name=NetGuard_Block_{ip}", "dir=in", "action=block",
+                    f"remoteip={ip}"
+                ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+    threading.Thread(target=_block, daemon=True).start()
 
 
 class NetworkGuardian:
     def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10, cleanup_interval_sec=30):
         self.logger = setup_logger()
-        self.packet_queue = Queue(maxsize=10000)
+        self.packet_queue = Queue(maxsize=20000)
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
 
@@ -130,14 +134,14 @@ class NetworkGuardian:
         self.whitelist = set()
         self.blacklist = {}  # {ip: unblock_time}
 
-        self.syn_history = defaultdict(deque)
-        self.port_history = defaultdict(deque)
+        # Use maxlen on deques to prevent memory exhaustion under attack
+        self.syn_history = defaultdict(lambda: deque(maxlen=1000))
+        self.port_history = defaultdict(lambda: deque(maxlen=1000))
 
         self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
 
-        # Build Aho-Corasick Automaton directly on Bytes for exact matching
         if HAS_AHOCORASICK:
-            self.automaton = ahocorasick.Automaton(ahocorasick.STORE_LENGTH)
+            self.automaton = ahocorasick.Automaton()
             for idx, key in enumerate(self.suspicious_keywords):
                 key_bytes = key.lower() if isinstance(key, bytes) else key.encode('utf-8').lower()
                 self.automaton.add_word(key_bytes, (idx, key_bytes))
@@ -148,32 +152,34 @@ class NetworkGuardian:
             self.logger.info("[+] Note: 'pyahocorasick' library not found. Falling back to native bytes searching.")
 
     def _is_blacklisted(self, src_ip, now):
-        """Helper function to evaluate blacklist state under lock."""
-        if src_ip in self.blacklist:
-            if now < self.blacklist[src_ip]:
+        """Must be called inside lock."""
+        exp_time = self.blacklist.get(src_ip)
+        if exp_time:
+            if now < exp_time:
                 return True
             else:
                 del self.blacklist[src_ip]
         return False
 
     def _enqueue_packet(self, pkt):
-        if not pkt.haslayer(IP) or self.packet_queue.full():
+        if not pkt.haslayer(IP):
             return
 
         src_ip = pkt[IP].src
         now = datetime.now()
 
+        # Fast non-locked read check for performance
         if src_ip in self.whitelist:
             return
 
         with self.lock:
-            if src_ip in self.whitelist or self._is_blacklisted(src_ip, now):
+            if self._is_blacklisted(src_ip, now):
                 return
 
         try:
             self.packet_queue.put_nowait(pkt)
         except Exception:
-            pass
+            pass # Drop packet if queue is full to prevent OOM
 
     def _clean_old_records(self, history_deque, now):
         while history_deque and (now - history_deque[0][0]) > self.TIME_WINDOW:
@@ -185,6 +191,7 @@ class NetworkGuardian:
             now = datetime.now()
 
             with self.lock:
+                # Safe iteration over keys
                 for ip in list(self.syn_history.keys()):
                     history = self.syn_history[ip]
                     self._clean_old_records(history, now)
@@ -197,8 +204,8 @@ class NetworkGuardian:
                     if not history:
                         del self.port_history[ip]
 
-                expired_blacklist = [ip for ip, exp_time in self.blacklist.items() if now >= exp_time]
-                for ip in expired_blacklist:
+                expired = [ip for ip, exp_time in self.blacklist.items() if now >= exp_time]
+                for ip in expired:
                     del self.blacklist[ip]
 
     def _check_dpi(self, payload: bytes, src_ip: str):
@@ -228,15 +235,17 @@ class NetworkGuardian:
             if src_ip in self.whitelist or self._is_blacklisted(src_ip, now):
                 return
 
-        # 1. DNS Inspection & Tunneling Detection
+        # 1. DNS Inspection & Tunneling Detection (Calculate entropy on subdomain only)
         if pkt.haslayer(DNSQR):
             try:
                 raw_query = pkt[DNSQR].qname
                 query = raw_query.decode('ascii', errors='ignore').strip('.')
 
-                if query and not query.endswith("local"):
-                    entropy = calculate_entropy(query)
-                    if len(query) > 60 or entropy > 4.2:
+                if query and not query.endswith(".local"):
+                    subdomain = query.split('.')[0]  # Check entropy on subdomain prefix
+                    entropy = calculate_entropy(subdomain)
+                    
+                    if len(subdomain) > 45 or entropy > 4.3:
                         self.logger.warning(
                             f"[DNS TUNNELING SUSPECT] Host {src_ip} query len={len(query)} entropy={entropy:.2f}: {query}",
                             extra={"src_ip": src_ip, "event_type": "DNS_TUNNELING", "details": f"Len: {len(query)}, Entropy: {entropy:.2f}"}
@@ -259,7 +268,7 @@ class NetworkGuardian:
             if tcp_flags & 0x02:  # SYN Flag
                 is_syn = True
 
-            # 2. Robust Bitwise Stealth Scan Detection
+            # 2. Bitwise Stealth Scan Detection
             fin = bool(tcp_flags & 0x01)
             syn = bool(tcp_flags & 0x02)
             rst = bool(tcp_flags & 0x04)
@@ -272,7 +281,7 @@ class NetworkGuardian:
                 stealth_type = "NULL Scan"
             elif fin and not (syn or rst or psh or ack or urg):
                 stealth_type = "FIN Scan"
-            elif fin and psh and urg:
+            elif fin and psh and urg and not (syn or rst or ack):
                 stealth_type = "XMAS Scan"
 
             if stealth_type:
@@ -293,7 +302,7 @@ class NetworkGuardian:
 
                 if len(syn_deque) > self.DOS_THRESHOLD:
                     self.blacklist[src_ip] = now + timedelta(minutes=5)
-                    block_ip_firewall(src_ip)  # OS Level Active Response
+                    block_ip_firewall_async(src_ip)  # Non-blocking OS firewall call
                     self.logger.critical(
                         f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes (Firewall Rule Applied)",
                         extra={"src_ip": src_ip, "event_type": "DOS_ATTACK", "details": "SYN Flood threshold exceeded"}
