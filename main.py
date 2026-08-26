@@ -2,6 +2,8 @@ import math
 import json
 import logging
 import os
+import platform
+import subprocess
 import threading
 import time
 from collections import defaultdict, deque
@@ -97,6 +99,22 @@ def calculate_entropy(text: str) -> float:
     return entropy
 
 
+def block_ip_firewall(ip: str):
+    """Active Response: Blocks IP address at OS Firewall level."""
+    system = platform.system().lower()
+    try:
+        if system == "linux":
+            subprocess.run(["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"], check=True)
+        elif system == "windows":
+            subprocess.run([
+                "netsh", "advfirewall", "firewall", "add", "rule",
+                f"name=NetGuard_Block_{ip}", "dir=in", "action=block",
+                f"remoteip={ip}"
+            ], check=True)
+    except Exception:
+        pass  # Failsafe if script isn't running with root/admin privileges
+
+
 class NetworkGuardian:
     def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10, cleanup_interval_sec=30):
         self.logger = setup_logger()
@@ -117,18 +135,17 @@ class NetworkGuardian:
 
         self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
 
-        # Build Aho-Corasick Automaton for O(N) DPI safely
+        # Build Aho-Corasick Automaton directly on Bytes for exact matching
         if HAS_AHOCORASICK:
-            self.automaton = ahocorasick.Automaton()
+            self.automaton = ahocorasick.Automaton(ahocorasick.STORE_LENGTH)
             for idx, key in enumerate(self.suspicious_keywords):
-                # pyahocorasick requires string keys
-                key_str = key.decode('utf-8', errors='ignore') if isinstance(key, bytes) else str(key)
-                self.automaton.add_word(key_str, (idx, key_str))
+                key_bytes = key.lower() if isinstance(key, bytes) else key.encode('utf-8').lower()
+                self.automaton.add_word(key_bytes, (idx, key_bytes))
             self.automaton.make_automaton()
-            self.logger.info("[+] Aho-Corasick DPI Engine initialized successfully.")
+            self.logger.info("[+] Aho-Corasick Bytes DPI Engine initialized successfully.")
         else:
             self.automaton = None
-            self.logger.info("[+] Note: 'pyahocorasick' library not found. Falling back to native string searching.")
+            self.logger.info("[+] Note: 'pyahocorasick' library not found. Falling back to native bytes searching.")
 
     def _is_blacklisted(self, src_ip, now):
         """Helper function to evaluate blacklist state under lock."""
@@ -146,7 +163,6 @@ class NetworkGuardian:
         src_ip = pkt[IP].src
         now = datetime.now()
 
-        # Fast non-blocking check before acquiring lock
         if src_ip in self.whitelist:
             return
 
@@ -157,7 +173,7 @@ class NetworkGuardian:
         try:
             self.packet_queue.put_nowait(pkt)
         except Exception:
-            pass  # Queue full, drop packet safely under pressure
+            pass
 
     def _clean_old_records(self, history_deque, now):
         while history_deque and (now - history_deque[0][0]) > self.TIME_WINDOW:
@@ -169,38 +185,35 @@ class NetworkGuardian:
             now = datetime.now()
 
             with self.lock:
-                # Cleanup SYN history
                 for ip in list(self.syn_history.keys()):
                     history = self.syn_history[ip]
                     self._clean_old_records(history, now)
                     if not history:
                         del self.syn_history[ip]
 
-                # Cleanup Port Scan history
                 for ip in list(self.port_history.keys()):
                     history = self.port_history[ip]
                     self._clean_old_records(history, now)
                     if not history:
                         del self.port_history[ip]
 
-                # Cleanup expired Blacklist entries
                 expired_blacklist = [ip for ip, exp_time in self.blacklist.items() if now >= exp_time]
                 for ip in expired_blacklist:
                     del self.blacklist[ip]
 
     def _check_dpi(self, payload: bytes, src_ip: str):
-        payload_lower_str = payload.lower().decode('utf-8', errors='ignore')
+        payload_lower = payload.lower()
         
         if self.automaton:
-            for end_index, (idx, kw_str) in self.automaton.iter(payload_lower_str):
+            for end_index, (idx, kw_bytes) in self.automaton.iter(payload_lower):
+                kw_str = kw_bytes.decode('utf-8', errors='ignore')
                 self.logger.warning(
                     f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
                     extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
                 )
         else:
-            payload_lower_bytes = payload.lower()
             for kw in self.suspicious_keywords:
-                if kw in payload_lower_bytes:
+                if kw.lower() in payload_lower:
                     kw_str = kw.decode('utf-8', errors='ignore')
                     self.logger.warning(
                         f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
@@ -219,7 +232,6 @@ class NetworkGuardian:
         if pkt.haslayer(DNSQR):
             try:
                 raw_query = pkt[DNSQR].qname
-                # סינון תווים שאינם ASCII מודפסים
                 query = raw_query.decode('ascii', errors='ignore').strip('.')
 
                 if query and not query.endswith("local"):
@@ -239,21 +251,28 @@ class NetworkGuardian:
 
         dst_port = None
         is_syn = False
-        tcp_flags = None
 
         if pkt.haslayer(TCP):
             dst_port = pkt[TCP].dport
             tcp_flags = int(pkt[TCP].flags)
+            
             if tcp_flags & 0x02:  # SYN Flag
                 is_syn = True
 
-            # 2. Stealth Scan Detection (NULL, FIN, XMAS)
+            # 2. Robust Bitwise Stealth Scan Detection
+            fin = bool(tcp_flags & 0x01)
+            syn = bool(tcp_flags & 0x02)
+            rst = bool(tcp_flags & 0x04)
+            psh = bool(tcp_flags & 0x08)
+            ack = bool(tcp_flags & 0x10)
+            urg = bool(tcp_flags & 0x20)
+
             stealth_type = None
             if tcp_flags == 0:
                 stealth_type = "NULL Scan"
-            elif tcp_flags == 0x01:
+            elif fin and not (syn or rst or psh or ack or urg):
                 stealth_type = "FIN Scan"
-            elif tcp_flags == 0x29:  # FIN + PSH + URG
+            elif fin and psh and urg:
                 stealth_type = "XMAS Scan"
 
             if stealth_type:
@@ -274,8 +293,9 @@ class NetworkGuardian:
 
                 if len(syn_deque) > self.DOS_THRESHOLD:
                     self.blacklist[src_ip] = now + timedelta(minutes=5)
+                    block_ip_firewall(src_ip)  # OS Level Active Response
                     self.logger.critical(
-                        f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes",
+                        f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes (Firewall Rule Applied)",
                         extra={"src_ip": src_ip, "event_type": "DOS_ATTACK", "details": "SYN Flood threshold exceeded"}
                     )
                     syn_deque.clear()
@@ -311,7 +331,6 @@ class NetworkGuardian:
     def start(self, num_workers=4):
         self.logger.info("NetworkGuardian Engine Starting...")
 
-        # Initialize Worker Pool for multi-threading throughput
         workers = []
         for i in range(num_workers):
             w = threading.Thread(target=self.packet_worker, daemon=True, name=f"Worker-{i}")
