@@ -133,7 +133,7 @@ python_sniffer/
 ## 🛠️ Technologies & Architectural Highlights
 
 - **Python & Scapy** — Raw-socket-level packet capture, protocol parsing, and deep payload-level inspection (DPI).
-- **Native C Extension (ctypes)** — Batch-optimized C DPI engine invoked via `ctypes`, delivering a 42x throughput acceleration over the pure-Python implementation for payload scanning.
+- **Native C Extension (ctypes)** — Batch-optimized, memory-safe C DPI engine invoked via ctypes, delivering an **8x–10x** bounds-checked throughput acceleration over pure Python.
 - **Producer-Consumer Architecture** — Full separation between packet capture and analysis via `queue.Queue(maxsize=10000)`, preventing packet loss under load.
 - **Thread-Safety & Active Defense** — Whitelist/Blacklist state management and anomaly detection guarded by `threading.Lock` to prevent data races, alongside dynamic, time-limited blocking of attacking IP addresses.
 - **Background Garbage Collector** — A dedicated background thread that cleans up stale data structures (Sliding Window History & Blacklist) from memory every 30 seconds, synchronously and thread-safely, ensuring zero memory leaks from dormant IP addresses.
