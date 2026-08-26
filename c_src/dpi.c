@@ -1,6 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(_WIN32) || defined(_WIN64)
+    #define EXPORT __declspec(dllexport)
+#else
+    #define EXPORT __attribute__((visibility("default")))
+#endif
+
 typedef struct {
     const char *pattern;
     size_t len;
@@ -16,19 +22,25 @@ static const Signature SIGNATURES[] = {
     {NULL,          0}
 };
 
-#if defined(_WIN32) || defined(_WIN64)
-    #define EXPORT __declspec(dllexport)
-#else
-    #define EXPORT __attribute__((visibility("default")))
-#endif
+// Safe and hardware-accelerated substring match using bounds-checked memchr
+static inline int safe_payload_contains(const char *payload, size_t payload_len, const char *pattern, size_t pattern_len) {
+    if (pattern_len > payload_len || pattern_len == 0) return 0;
 
-static int mem_contains(const char *haystack, size_t haystack_len, const char *needle, size_t needle_len) {
-    if (needle_len > haystack_len) return 0;
-    size_t max_idx = haystack_len - needle_len;
-    for (size_t i = 0; i <= max_idx; i++) {
-        if (memcmp(haystack + i, needle, needle_len) == 0) {
+    const char *ptr = payload;
+    size_t remaining = payload_len;
+
+    while (remaining >= pattern_len) {
+        // Find first char matching pattern using libc assembly optimization
+        ptr = (const char *)memchr(ptr, pattern[0], remaining - pattern_len + 1);
+        if (!ptr) return 0;
+
+        // Verify full match safely without relying on null-terminator
+        if (memcmp(ptr, pattern, pattern_len) == 0) {
             return 1;
         }
+
+        ptr++;
+        remaining = payload_len - (size_t)(ptr - payload);
     }
     return 0;
 }
@@ -37,8 +49,8 @@ EXPORT int inspect_payload(const char* payload, int payload_len) {
     if (!payload || payload_len <= 0) return 0;
 
     for (int i = 0; SIGNATURES[i].pattern != NULL; i++) {
-        if (mem_contains(payload, (size_t)payload_len, SIGNATURES[i].pattern, SIGNATURES[i].len)) {
-            return 1; // Match found
+        if (safe_payload_contains(payload, (size_t)payload_len, SIGNATURES[i].pattern, SIGNATURES[i].len)) {
+            return 1;
         }
     }
     return 0;

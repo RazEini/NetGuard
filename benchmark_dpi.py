@@ -1,69 +1,114 @@
 import ctypes
 import os
-import platform
-import timeit
+import sys
+import time
 
-lib_path = "./libdpi.so" if platform.system() != "Windows" else "./libdpi.dll"
+# ---------------------------------------------------------------------------
+# 1. Load Native C Extension
+# ---------------------------------------------------------------------------
+lib_path = "./libdpi.dll" if sys.platform == "win32" else "./libdpi.so"
 
 if not os.path.exists(lib_path):
-    print(f"[-] Error: {lib_path} not found. Please compile the C library first.")
-    exit(1)
+    print(f"[-] Shared library not found at {lib_path}. Compile it first.")
+    sys.exit(1)
 
-c_dpi = ctypes.CDLL(os.path.abspath(lib_path))
+c_lib = ctypes.CDLL(lib_path)
 
-# Bindings
-c_dpi.inspect_payload.argtypes = [ctypes.c_char_p, ctypes.c_int]
-c_dpi.inspect_payload.restype = ctypes.c_int
-
-c_dpi.inspect_batch.argtypes = [
+# Define C Function Signature for inspect_batch:
+# int inspect_batch(const char** payloads, const int* lengths, int count, int* results)
+c_lib.inspect_batch.argtypes = [
     ctypes.POINTER(ctypes.c_char_p),
     ctypes.POINTER(ctypes.c_int),
     ctypes.c_int,
-    ctypes.POINTER(ctypes.c_int)
+    ctypes.POINTER(ctypes.c_int),
 ]
-c_dpi.inspect_batch.restype = ctypes.c_int
+c_lib.inspect_batch.restype = ctypes.c_int
 
-TEST_PAYLOAD = (
-    b"POST /api/v1/login HTTP/1.1\r\n"
-    b"Host: example.com\r\n"
-    b"User-Agent: Mozilla/5.0 (X11; Linux x86_64)\r\n"
-    b"Content-Type: application/json\r\n"
-    b"Content-Length: 45\r\n\r\n"
-    b'{"username": "admin\' OR \'1\'=\'1", "pass": "123"}'
-) * 5
 
-SIGNATURES = ["' OR '1'='1", "UNION SELECT", "<script>", "../", "etc/passwd", "cmd.exe"]
+# ---------------------------------------------------------------------------
+# 2. Pure Python Engine Implementation
+# ---------------------------------------------------------------------------
+SIGNATURES_PY = [
+    b"' OR '1'='1",
+    b"UNION SELECT",
+    b"<script>",
+    b"../",
+    b"etc/passwd",
+    b"cmd.exe",
+]
 
-def dpi_python_batch(payloads):
-    results = []
-    for p in payloads:
-        p_str = p.decode('utf-8', errors='ignore')
-        results.append(any(sig in p_str for sig in SIGNATURES))
-    return results
 
-def run_benchmark():
-    ITERATIONS = 100_000
-    print(f"=== NetGuard DPI Benchmark ({ITERATIONS:,} Packets) ===")
+def inspect_payload_py(payload: bytes) -> int:
+    for sig in SIGNATURES_PY:
+        if sig in payload:
+            return 1
+    return 0
 
-    payloads = [TEST_PAYLOAD] * ITERATIONS
+
+def run_python_benchmark(payloads: list[bytes]) -> float:
+    start_time = time.perf_counter()
+    results = [inspect_payload_py(p) for p in payloads]
+    end_time = time.perf_counter()
+    return end_time - start_time
+
+
+# ---------------------------------------------------------------------------
+# 3. Native C Extension Batch Benchmark
+# ---------------------------------------------------------------------------
+def prepare_c_buffers(payloads: list[bytes]):
+    count = len(payloads)
     
-    # 1. Python Pure Batch
-    py_time = timeit.timeit(lambda: dpi_python_batch(payloads), number=1)
-    py_pps = ITERATIONS / py_time
+    # Safe allocation without python list unpacking unpacking (*payloads)
+    payload_ptrs = (ctypes.c_char_p * count)()
+    lengths = (ctypes.c_int * count)()
+    results = (ctypes.c_int * count)()
 
-    # 2. C Native Batch Setup
-    c_payloads = (ctypes.c_char_p * ITERATIONS)(*payloads)
-    c_lengths = (ctypes.c_int * ITERATIONS)(*[len(p) for p in payloads])
-    c_results = (ctypes.c_int * ITERATIONS)()
+    for i, p in enumerate(payloads):
+        payload_ptrs[i] = p
+        lengths[i] = len(p)
 
-    c_time = timeit.timeit(lambda: c_dpi.inspect_batch(c_payloads, c_lengths, ITERATIONS, c_results), number=1)
-    c_pps = ITERATIONS / c_time
+    return payload_ptrs, lengths, count, results
 
-    speedup = py_time / c_time
 
-    print(f"🐍 Python Engine:  {py_time:.4f} sec | {py_pps:,.0f} Packets/sec")
-    print(f"⚡ C Extension:    {c_time:.4f} sec | {c_pps:,.0f} Packets/sec")
-    print(f"🚀 Speedup Factor: {speedup:.2f}x faster with C Extension!")
+def run_c_batch_benchmark(payload_ptrs, lengths, count, results) -> float:
+    # Benchmark EXCLUSIVELY the C engine execution time
+    start_time = time.perf_counter()
+    c_lib.inspect_batch(payload_ptrs, lengths, count, results)
+    end_time = time.perf_counter()
 
+    return end_time - start_time
+
+
+# ---------------------------------------------------------------------------
+# 4. Benchmark Execution & Comparison
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    run_benchmark()
+    NUM_PACKETS = 100_000
+
+    # Synthetic Dataset Generation (Mix of clean & malicious payloads)
+    sample_clean = b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: Mozilla/5.0\r\n\r\n"
+    sample_malicious = b"POST /login HTTP/1.1\r\nHost: example.com\r\n\r\nusername=admin' OR '1'='1"
+
+    print(f"=== NetGuard DPI Benchmark ({NUM_PACKETS:,} Packets) ===")
+
+    test_payloads = [
+        sample_malicious if i % 10 == 0 else sample_clean
+        for i in range(NUM_PACKETS)
+    ]
+
+    # Run Python Benchmark
+    py_time = run_python_benchmark(test_payloads)
+    py_pps = NUM_PACKETS / py_time
+    print(f"🐍 Python Engine:  {py_time:.4f} sec | {py_pps:,.0f} Packets/sec")
+
+    # Prepare C Buffers (Out of measurement scope to eliminate Python setup overhead)
+    c_buffers = prepare_c_buffers(test_payloads)
+
+    # Run C Batch Benchmark
+    c_time = run_c_batch_benchmark(*c_buffers)
+    c_pps = NUM_PACKETS / c_time
+    print(f"⚡ C Extension:     {c_time:.4f} sec | {c_pps:,.0f} Packets/sec")
+
+    # Results
+    speedup = py_time / c_time if c_time > 0 else 0
+    print(f"🚀 Speedup Factor: {speedup:.2f}x faster with C Extension!")
