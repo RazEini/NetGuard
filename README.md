@@ -1,4 +1,4 @@
-<h1 align="center"> 🕵️ NetGuard – Full-Stack NIDS & Security Observability Engine </h2>
+<h1 align="center"> 🕵️ NetGuard – Hybrid Python/C NIDS & Observability Engine </h2>
 
 <p align="center">
   A full end-to-end real-time <strong>Network Intrusion Detection System (NIDS)</strong>.
