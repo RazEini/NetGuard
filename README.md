@@ -24,10 +24,6 @@
 **NetGuard** provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
 The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
 
-<p align="center">
-  <img src="assets/dashboard_preview.png" alt="NetGuard SIEM Grafana Dashboard Overview" width="95%">
-</p>
-
 ```mermaid
 flowchart TD
     %% Traffic Input
@@ -54,6 +50,27 @@ flowchart TD
     Promtail -->|HTTP/Push| Loki[🗄️ Loki DB Container]
     Loki -->|PromQL/LogQL| Grafana[📊 Grafana Dashboard as Code]
 ```
+
+---
+
+## 📊 Dashboard Preview
+
+Live view of the **NetGuard Security Overview** Grafana dashboard, provisioned automatically from code.
+
+<p align="center">
+  <img src="assets/dashboard_overview.png" alt="NetGuard Live Security Log Stream & Events Distribution" width="95%">
+  <br><em>Live JSON log stream with DNS query events, alongside real-time Security Events Distribution and Threat Timeline panels.</em>
+</p>
+
+<p align="center">
+  <img src="assets/dashboard_threat_detection.png" alt="NetGuard DoS Detection & DNS Tunneling Alert" width="95%">
+  <br><em>Active Defense in action — a DoS/SYN Flood attack triggers automatic IP isolation, alongside a DNS Tunneling detection alert (Shannon entropy-based).</em>
+</p>
+
+<p align="center">
+  <img src="assets/dashboard_analytics.png" alt="NetGuard Security Events Breakdown & Top Suspicious Source IPs" width="95%">
+  <br><em>Full event-type breakdown (Port Scans, Stealth Scans, DPI Alerts, DoS Attacks) with Top Suspicious Source IPs and Total Security Alerts panels.</em>
+</p>
 
 ---
 
@@ -94,7 +111,9 @@ flowchart TD
 ```text
 python_sniffer/
 ├── assets/                          # Static Documentation Assets (Dashboard Screenshots)
-│   └── dashboard_preview.png
+│   ├── dashboard_overview.png
+│   ├── dashboard_threat_detection.png
+│   └── dashboard_analytics.png
 ├── benchmark_dpi.py                # Native C vs Python DPI Micro-Benchmark
 ├── c_src/                          # Low-Level Native C Extensions
 │   ├── dpi.c                       # Native C DPI Engine (Batch Engine)
