@@ -131,21 +131,23 @@ NetGuard/
 │   ├── dashboard_overview.png
 │   ├── dashboard_threat_detection.png
 │   └── dashboard_analytics.png
-├── benchmark_dpi.py                # Native C vs Python DPI Micro-Benchmark
 ├── c_src/                          # Low-Level Native C Extensions
 │   ├── dpi.c                       # Native C DPI Engine (Batch Engine)
 │   └── Makefile                    # C Compilation Setup
 ├── grafana/
-│   └── dashboards/                 # Standard JSON Dashboard (Git Version-Controlled)
-│       └── dashboard-NetGuard Security Overview.json
-├── provisioning/                   # Grafana Automated Provisioning Configs
-│   ├── dashboards/
-│   │   └── dashboards.yml
-│   └── datasources/
-│       └── datasources.yml
-├── logs/                           # Runtime Log Directory (Ignored by Git)
+│   ├── dashboards/                 # Standard JSON Dashboard (Git Version-Controlled)
+│   │   └── dashboard-NetGuard Security Overview.json
+│   └── provisioning/                # Grafana Automated Provisioning Configs
+│       ├── dashboards/
+│       │   └── dashboards.yml
+│       └── datasources/
+│           └── datasources.yml
+├── logs/                           # Runtime Log Directory (Ignored by Git, not tracked)
 ├── .env.example
 ├── .gitignore
+├── LICENSE
+├── README.md
+├── benchmark_dpi.py                # Native C vs Python DPI Micro-Benchmark
 ├── docker-compose.yml
 ├── main.py                         # NIDS Core Engine (Thread-Safe & GC Refactored)
 ├── promtail-config.yml
