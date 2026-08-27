@@ -199,7 +199,7 @@ NetGuard/
 ```bash
 # 1. Clone the repository
 git clone https://github.com/RazEini/NetGuard.git
-cd python_sniffer
+cd NetGuard
 
 # 2. Environment Setup
 cp .env.example .env  # Set your Grafana password in .env
