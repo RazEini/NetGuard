@@ -100,13 +100,9 @@ python_sniffer/
 │   ├── dpi.c                       # Native C DPI Engine (Batch Engine)
 │   └── Makefile                    # C Compilation Setup
 ├── grafana/
-│   └── dashboards/                 # Standard JSON Dashboards (Git Version-Controlled)
-│       ├── dashboard-Live Security Log Stream.json
-│       ├── dashboard-Security Events Distribution.json
-│       ├── dashboard-Threat Timeline & Severity Levels.json
-│       ├── dashboard-Top Suspicious Source IPs.json
-│       └── dashboard-Total Security Alerts.json
-├── provisioning/                    # Grafana Automated Provisioning Configs
+│   └── dashboards/                 # Standard JSON Dashboard (Git Version-Controlled)
+│       └── dashboard-NetGuard Security Overview.json
+├── provisioning/                   # Grafana Automated Provisioning Configs
 │   ├── dashboards/
 │   │   └── dashboards.yml
 │   └── datasources/
