@@ -25,30 +25,30 @@
 The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping:
 
 ```mermaid
-flowchart TD
+flowchart LR
     %% Traffic Input
-    NIC[📡 Network Interface] -->|Raw Packets| SnifferThread[🐍 Sniffer Thread - Scapy store=0]
+    NIC[📡 NIC] -->|Raw Packets| SnifferThread[🐍 Sniffer Thread<br>Scapy store=0]
 
     %% Core Engine
     subgraph Engine [Python NIDS Core Engine]
-        SnifferThread -->|Non-blocking Put| Queue[📦 Bounded Queue maxsize=10000]
-        Queue -->|Get Packet| Worker[⚙️ Worker Threads Pool]
+        SnifferThread -->|Non-blocking Put| Queue[📦 Queue<br>maxsize=10000]
+        Queue -->|Get Packet| Worker[⚙️ Worker Pool]
 
-        subgraph Detection [Detection & Active Defense]
-            Worker -->|L3/L4 Sliding Window| Anomaly[🛡️ DoS / Port Scan Detector]
-            Worker -->|L7 Raw Payload| DPI[⚡ Native C DPI Engine via ctypes]
-            Anomaly -->|Trigger Attack Threshold| Firewall[🧱 OS Firewall Subprocess - netsh / iptables]
-            Anomaly & DPI -->|Check/Update| State[🔒 Lock-Guarded State & Blacklist]
+        subgraph Detection [Detection & Defense]
+            Worker -->|L3/L4 Window| Anomaly[🛡️ DoS / Scan Detector]
+            Worker -->|L7 Payload| DPI[⚡ Native C DPI Engine]
+            Anomaly -->|Threshold Breach| Firewall[🧱 OS Firewall<br>netsh / iptables]
+            Anomaly & DPI -->|Update| State[🔒 State & Blacklist]
         end
 
-        GC[🧹 Background GC Thread] -->|Synchronous Clean Every 30s| State
+        GC[🧹 GC Thread] -->|Clean Every 30s| State
     end
 
     %% Logging & Observability
-    Worker -->|Write JSON Log| LogFile[📄 logs/network_security.json]
-    Promtail[🔄 Promtail Container] -->|Tail & Ship| LogFile
-    Promtail -->|HTTP/Push| Loki[🗄️ Loki DB Container]
-    Loki -->|PromQL/LogQL| Grafana[📊 Grafana Dashboard as Code]
+    Worker -->|JSON Log| LogFile[📄 logs/network_security.json]
+    LogFile --> Promtail[🔄 Promtail Container]
+    Promtail -->|Push| Loki[🗄️ Loki DB]
+    Loki --> Grafana[📊 Grafana Dashboard]
 ```
 
 ---
