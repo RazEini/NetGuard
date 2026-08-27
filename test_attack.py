@@ -56,15 +56,16 @@ def test_dpi_signatures() -> None:
 
 def test_port_scan() -> None:
     """
-    Simulates a horizontal port scan across 25 distinct ports (TCP SYN)
+    Simulates a horizontal port scan across 60 distinct ports (TCP SYN)
     """
     print_step("Testing Port Scan Detection (Sliding Window)")
-    print("  [>] Scanning ports 1000 to 1025...")
+    print("  [>] Scanning ports 1000 to 1060...")
 
-    for port in range(1000, 1026):
-        pkt = IP(dst=TARGET_IP) / TCP(dport=port, flags="S")
+    # Spoofed IP to ensure safe testing without rate-limiting self
+    for port in range(1000, 1061):  # 61 unique ports to cross threshold=50
+        pkt = IP(src="203.0.113.51", dst=TARGET_IP) / TCP(dport=port, flags="S")
         send(pkt, verbose=False)
-        time.sleep(0.05)  # Fast enough to trigger threshold, safe for network
+        time.sleep(0.02)
 
     print("[✔] Port Scan Test Finished!")
 
@@ -123,11 +124,12 @@ def test_syn_flood() -> None:
     Simulates a controlled DoS SYN Flood attack (High rate in short time)
     """
     print_step("Testing DoS / SYN Flood Detection")
-    print("  [>] Bursting 150 SYN packets to port 80...")
+    print("  [>] Bursting 600 SYN packets to port 80...")
 
-    for _ in range(150):
-        pkt = IP(dst=TARGET_IP) / TCP(dport=80, flags="S")
-        send(pkt, verbose=False)
+    # Spoofed IP to ensure simulator triggers explicit threat signature
+    pkt_template = IP(src="203.0.113.50", dst=TARGET_IP) / TCP(dport=80, flags="S")
+    for _ in range(600):
+        send(pkt_template, verbose=False)
 
     print("[✔] SYN Flood Test Finished!")
 

@@ -368,5 +368,6 @@ class NetworkGuardian:
 
 
 if __name__ == "__main__":
-    guardian = NetworkGuardian()
+    # dos_threshold=500, scan_threshold=50
+    guardian = NetworkGuardian(dos_threshold=500, scan_threshold=50, time_window_sec=10)
     guardian.start(num_workers=4)
