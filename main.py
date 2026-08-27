@@ -120,7 +120,7 @@ def block_ip_firewall_async(ip: str):
 
 
 class NetworkGuardian:
-    def __init__(self, dos_threshold=50, scan_threshold=15, time_window_sec=10, cleanup_interval_sec=30):
+    def __init__(self, dos_threshold=500, scan_threshold=50, time_window_sec=10, cleanup_interval_sec=30):
         self.logger = setup_logger()
         self.packet_queue = Queue(maxsize=20000)
         self.stop_event = threading.Event()
@@ -134,7 +134,6 @@ class NetworkGuardian:
         self.whitelist = set()
         self.blacklist = {}  # {ip: unblock_time}
 
-        # Use maxlen on deques to prevent memory exhaustion under attack
         self.syn_history = defaultdict(lambda: deque(maxlen=1000))
         self.port_history = defaultdict(lambda: deque(maxlen=1000))
 
@@ -169,7 +168,6 @@ class NetworkGuardian:
         src_ip = pkt[IP].src
         now = datetime.now()
 
-        # Fast non-locked read check for performance
         if src_ip in self.whitelist:
             return
 
@@ -180,7 +178,7 @@ class NetworkGuardian:
         try:
             self.packet_queue.put_nowait(pkt)
         except Exception:
-            pass # Drop packet if queue is full to prevent OOM
+            pass
 
     def _clean_old_records(self, history_deque, now):
         while history_deque and (now - history_deque[0][0]) > self.TIME_WINDOW:
@@ -192,7 +190,6 @@ class NetworkGuardian:
             now = datetime.now()
 
             with self.lock:
-                # Safe iteration over keys
                 for ip in list(self.syn_history.keys()):
                     history = self.syn_history[ip]
                     self._clean_old_records(history, now)
@@ -211,23 +208,22 @@ class NetworkGuardian:
 
     def _check_dpi(self, payload: bytes, src_ip: str):
         payload_str = payload.decode('utf-8', errors='ignore').lower()
+        matched_keywords = set()
         
         if self.automaton:
             for end_index, (idx, kw_bytes) in self.automaton.iter(payload_str):
-                kw_str = kw_bytes.decode('utf-8', errors='ignore')
-                self.logger.warning(
-                    f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
-                    extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
-                )
+                matched_keywords.add(kw_bytes.decode('utf-8', errors='ignore'))
         else:
             payload_lower = payload.lower()
             for kw in self.suspicious_keywords:
                 if kw.lower() in payload_lower:
-                    kw_str = kw.decode('utf-8', errors='ignore')
-                    self.logger.warning(
-                        f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
-                        extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
-                    )
+                    matched_keywords.add(kw.decode('utf-8', errors='ignore'))
+
+        for kw_str in matched_keywords:
+            self.logger.warning(
+                f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
+                extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
+            )
 
     def analyze_packet(self, pkt):
         now = datetime.now()
@@ -237,14 +233,14 @@ class NetworkGuardian:
             if src_ip in self.whitelist or self._is_blacklisted(src_ip, now):
                 return
 
-        # 1. DNS Inspection & Tunneling Detection (Calculate entropy on subdomain only)
+        # 1. DNS Inspection & Tunneling Detection
         if pkt.haslayer(DNSQR):
             try:
                 raw_query = pkt[DNSQR].qname
                 query = raw_query.decode('ascii', errors='ignore').strip('.')
 
                 if query and not query.endswith(".local"):
-                    subdomain = query.split('.')[0]  # Check entropy on subdomain prefix
+                    subdomain = query.split('.')[0]
                     entropy = calculate_entropy(subdomain)
                     
                     if len(subdomain) > 45 or entropy > 4.3:
@@ -295,7 +291,7 @@ class NetworkGuardian:
         elif pkt.haslayer(UDP):
             dst_port = pkt[UDP].dport
 
-        # 3. DoS & Port Scan Detection
+        # 3. DoS & Port Scan Detection (Atomic State Updates)
         with self.lock:
             if is_syn:
                 syn_deque = self.syn_history[src_ip]
@@ -304,7 +300,7 @@ class NetworkGuardian:
 
                 if len(syn_deque) > self.DOS_THRESHOLD:
                     self.blacklist[src_ip] = now + timedelta(minutes=5)
-                    block_ip_firewall_async(src_ip)  # Non-blocking OS firewall call
+                    block_ip_firewall_async(src_ip)
                     self.logger.critical(
                         f"[DoS DETECTED] Isolating IP: {src_ip} for 5 minutes (Firewall Rule Applied)",
                         extra={"src_ip": src_ip, "event_type": "DOS_ATTACK", "details": "SYN Flood threshold exceeded"}
@@ -368,6 +364,5 @@ class NetworkGuardian:
 
 
 if __name__ == "__main__":
-    # dos_threshold=500, scan_threshold=50
     guardian = NetworkGuardian(dos_threshold=500, scan_threshold=50, time_window_sec=10)
     guardian.start(num_workers=4)
