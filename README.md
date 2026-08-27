@@ -153,8 +153,6 @@ NetGuard/
 └── test_attack.py                  # Traffic Simulator
 ```
 
-> ⚠️ Not independently verified against the live GitHub repo — confirm this still matches `git ls-tree -r HEAD --name-only` before publishing, especially the presence of `provisioning/` at root and whether a `LICENSE` file exists there.
-
 ---
 
 ## 🚀 Core Features
