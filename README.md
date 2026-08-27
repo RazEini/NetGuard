@@ -109,7 +109,7 @@ Live view of the **NetGuard Security Overview** Grafana dashboard, provisioned a
 ## 📂 Project Structure
 
 ```text
-python_sniffer/
+NetGuard/
 ├── assets/                          # Static Documentation Assets (Dashboard Screenshots)
 │   ├── dashboard_overview.png
 │   ├── dashboard_threat_detection.png
@@ -198,7 +198,7 @@ python_sniffer/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/RazEini/python_sniffer.git
+git clone https://github.com/RazEini/NetGuard.git
 cd python_sniffer
 
 # 2. Environment Setup
