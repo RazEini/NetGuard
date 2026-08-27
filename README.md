@@ -102,7 +102,7 @@ python_sniffer/
 ├── grafana/
 │   └── dashboards/                 # Standard JSON Dashboard (Git Version-Controlled)
 │       └── dashboard-NetGuard Security Overview.json
-├── provisioning/                    # Grafana Automated Provisioning Configs
+├── provisioning/                   # Grafana Automated Provisioning Configs
 │   ├── dashboards/
 │   │   └── dashboards.yml
 │   └── datasources/
