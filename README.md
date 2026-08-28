@@ -24,7 +24,7 @@
 **NetGuard** provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
 The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping.
 
-> **Note on DPI engines:** the live pipeline runs **two complementary DPI engines on every eligible packet's payload**: an Aho-Corasick automaton (`pyahocorasick`, with a pure-Python substring fallback if it isn't installed) matches Layer-7 keyword signatures (`admin`, `password`, `etc/passwd`, `select * from`), and a **Native C Extension** (`c_src/dpi.c`, loaded via `ctypes` in `NetworkGuardian.__init__`) matches injection-pattern signatures (`UNION SELECT`, `<script>`, `../../`, `cmd.exe`, `; whoami`, etc.) using bounds-checked `memchr`/`memcmp` scanning. Both engines are skipped for well-known encrypted ports (443, 8443, etc.) and payloads that don't look like plaintext — substring matching against encrypted/high-entropy bytes wastes CPU and risks false positives. If `libdpi.so`/`.dll` hasn't been compiled yet (`make -C c_src`), NetGuard logs a note and runs on Aho-Corasick alone — the C engine is an enhancement, not a hard dependency. `benchmark_dpi.py` uses the same shared library separately to measure raw C-vs-Python throughput; see [DPI Engines](#-dpi-engines-live-detection-vs-throughput-benchmark) below.
+> **Architecture Highlight:** NetGuard runs a **dual-layer DPI pipeline** on non-encrypted traffic: an Aho-Corasick automaton for Layer-7 keyword signatures, and a native C Extension (`ctypes`) for injection-pattern detection. Encrypted payloads (e.g., port 443) are automatically bypassed to optimize CPU usage and eliminate false positives.
 
 ```mermaid
 flowchart LR
@@ -185,6 +185,19 @@ NetGuard/
 - **Promtail & Grafana Loki** — Shipping of structured JSON logs from the local logs directory and indexing them in Loki.
 - **Dashboards as Code (IaC)** — The "NetGuard Security Overview" dashboard is version-controlled in Git under `grafana/dashboards/`, automatically loaded into Grafana on container startup.
 - **Docker Compose Stack** — One-click deployment of the entire observability infrastructure.
+
+---
+
+### 🧬 Algorithmic Detection: Shannon Entropy for DNS Tunneling
+
+NetGuard identifies covert communications and data exfiltration over DNS by analyzing the randomness (entropy) of domain query strings. 
+
+Standard domain names exhibit predictable natural-language patterns, whereas encrypted/encoded data streams (e.g., Base64/Hex DNS Tunneling) produce significantly higher entropy scores.
+
+- **Mathematical Model:**
+  Calculates Shannon Entropy $H(X)$ over the unique byte/character distribution of each query string:
+  $$H(X) = -\sum_{i=1}^{n} P(x_i) \log_2 P(x_i)$$
+- **Detection Threshold:** Queries exceeding the configured threshold ($H(X) > 4.2$) alongside anomalous string lengths trigger an immediate **DNS Tunneling Alert** and log entry.
 
 ---
 
