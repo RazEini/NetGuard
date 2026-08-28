@@ -3,12 +3,12 @@
 <p align="center">
   A full end-to-end real-time <strong>Network Intrusion Detection & Prevention System (NIDS/NIPS)</strong>.
   <br>
-  Combines a Multi-threaded Python (Scapy) capture and analysis engine with an <strong>Aho-Corasick DPI Engine</strong> for real-time inspection, a standalone <strong>Native C-Extension DPI Benchmark</strong> (Batch-Optimized), Sliding-Window anomaly detection, OS Firewall Active Defense, and a fully code-managed monitoring stack (<strong>Dashboard as Code</strong>) on <strong>Docker (Grafana + Loki + Promtail)</strong>.
+  Combines a Multi-threaded Python (Scapy) capture and analysis engine with a dual-layer DPI pipeline — an <strong>Aho-Corasick automaton</strong> for keyword signatures and a <strong>Native C Extension</strong> (bounds-checked, called live via <code>ctypes</code>) for injection-pattern signatures — plus Sliding-Window anomaly detection, OS Firewall Active Defense, and a fully code-managed monitoring stack (<strong>Dashboard as Code</strong>) on <strong>Docker (Grafana + Loki + Promtail)</strong>.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.x-blue?logo=python" alt="Python Badge">
-  <img src="https://img.shields.io/badge/DPI-C_Extension-00599C?logo=c&logoColor=white" alt="C Badge">
+  <img src="https://img.shields.io/badge/DPI-AhoCorasick_%2B_C-00599C?logo=c&logoColor=white" alt="DPI Badge">
   <img src="https://img.shields.io/badge/Library-Scapy-red" alt="Scapy Badge">
   <img src="https://img.shields.io/badge/Stack-Docker_Compose-2496ED?logo=docker" alt="Docker Badge">
   <img src="https://img.shields.io/badge/Monitoring-Grafana-F46800?logo=grafana" alt="Grafana Badge">
@@ -24,7 +24,7 @@
 **NetGuard** provides a complete solution for monitoring, analyzing, and responding to network security events across OSI layers 3, 4, and 7.
 The architecture is built on a continuous Producer-Consumer pipeline that separates low-level packet capture, real-time threat analysis, and structured observability shipping.
 
-> **Note on DPI engines:** the live pipeline below uses an **Aho-Corasick automaton** (with a pure-Python substring fallback if `pyahocorasick` isn't installed) for real-time payload inspection. The **Native C DPI Engine** (`c_src/dpi.c`) is a separate, standalone component invoked only from `benchmark_dpi.py` to measure raw throughput — it is not currently wired into `main.py`'s live detection path. See [DPI Engines](#-dpi-engines-live-vs-benchmark) below.
+> **Note on DPI engines:** the live pipeline runs **two complementary DPI engines on every eligible packet's payload**: an Aho-Corasick automaton (`pyahocorasick`, with a pure-Python substring fallback if it isn't installed) matches Layer-7 keyword signatures (`admin`, `password`, `etc/passwd`, `select * from`), and a **Native C Extension** (`c_src/dpi.c`, loaded via `ctypes` in `NetworkGuardian.__init__`) matches injection-pattern signatures (`UNION SELECT`, `<script>`, `../../`, `cmd.exe`, `; whoami`, etc.) using bounds-checked `memchr`/`memcmp` scanning. Both engines are skipped for well-known encrypted ports (443, 8443, etc.) and payloads that don't look like plaintext — substring matching against encrypted/high-entropy bytes wastes CPU and risks false positives. If `libdpi.so`/`.dll` hasn't been compiled yet (`make -C c_src`), NetGuard logs a note and runs on Aho-Corasick alone — the C engine is an enhancement, not a hard dependency. `benchmark_dpi.py` uses the same shared library separately to measure raw C-vs-Python throughput; see [DPI Engines](#-dpi-engines-live-detection-vs-throughput-benchmark) below.
 
 ```mermaid
 flowchart LR
@@ -38,7 +38,7 @@ flowchart LR
 
         subgraph Detection [Detection & Defense]
             Worker -->|L3/L4 Window| Anomaly[🛡️ DoS / Scan Detector]
-            Worker -->|L7 Payload| DPI[🐍 Aho-Corasick DPI Engine]
+            Worker -->|L7 Payload| DPI[⚡🐍 Aho-Corasick + Native C DPI]
             Anomaly -->|Threshold Breach| Firewall[🧱 OS Firewall<br>netsh / iptables]
             Anomaly & DPI -->|Update| State[🔒 State & Blacklist]
         end
@@ -80,28 +80,29 @@ Live view of the **NetGuard Security Overview** Grafana dashboard, provisioned a
 
 - **Memory Backpressure & Drop Policy** — The engine utilizes a bounded `Queue(maxsize=20000)` combined with `store=0` in Scapy to ensure zero in-memory packet buffering by the sniffer thread. Under high-throughput conditions, excess packets are dropped safely rather than causing Out-Of-Memory (OOM) fatal crashes.
 - **Concurrency & C-Level Unlocking** — Low-level packet capture executes within native socket primitives (C-level libpcap/WinPcap), releasing Python's Global Interpreter Lock (GIL) and allowing the background worker thread and garbage collector thread to execute processing tasks concurrently.
-- **Thread Safety & Granular Locking** — Multi-threaded access to volatile state structures (`syn_history`, `port_history`, `blacklist`) is protected using explicit `threading.Lock` primitives to guarantee atomic read/write state transitions without data races.
+- **Thread Safety via a Shared Lock** — Multi-threaded access to volatile state structures (`syn_history`, `port_history`, `blacklist`) is protected by a single shared `threading.Lock` to guarantee atomic read/write state transitions without data races.
 - **Active Defense & OS Firewall Integration** — Automatically triggers dynamic OS firewall mitigation rules (`netsh advfirewall` on Windows, `iptables` on Linux) upon identifying DoS/SYN Flood attacks. Commands execute asynchronously in detached daemon threads to keep processing queues zero-latency.
 - **Deterministic Resource Cleanup (Garbage Collector)** — Dormant IP records and expired blacklist entries are purged every 30 seconds by a background garbage collection thread in bounded $O(N)$ time, ensuring steady memory utilization under sustained traffic.
 
 ---
 
-## 🔬 DPI Engines: Live vs. Benchmark
+## 🔬 DPI Engines: Live Detection vs. Throughput Benchmark
 
-NetGuard currently ships **two independent DPI implementations** that are not wired together. Being explicit about this here so the architecture isn't overstated:
+NetGuard runs **two DPI engines together** in the live pipeline (`main.py`), each covering a different signature class, plus a separate standalone script for measuring the C engine's raw throughput in isolation:
 
-| | **Live Engine (used by `main.py`)** | **Benchmark Engine (`benchmark_dpi.py` + `c_src/dpi.c`)** |
-| :--- | :--- | :--- |
-| Technology | `pyahocorasick` automaton, with a pure-Python `in` substring fallback if the library isn't installed | Native C, invoked via `ctypes` (`libdpi.so` / `.dll`) |
-| Where it runs | Inside `NetworkGuardian._check_dpi`, on every captured packet in the live worker pool | Standalone script only — not imported or called by `main.py` |
-| Signature set | `admin`, `password`, `etc/passwd`, `select * from` | `' OR '1'='1`, `UNION SELECT`, `<script>`, `../`, `etc/passwd`, `cmd.exe` |
-| Purpose | Real-time detection & alerting | Measuring native-C vs. pure-Python throughput on synthetic payloads |
+| | **Live: Aho-Corasick (`_check_dpi_keywords`)** | **Live: Native C (`_check_dpi_native`)** | **Standalone: `benchmark_dpi.py`** |
+| :--- | :--- | :--- | :--- |
+| Technology | `pyahocorasick` automaton, pure-Python substring fallback if unavailable | Native C via `ctypes`, loaded once in `NetworkGuardian.__init__` | Same `libdpi` shared library, loaded independently |
+| Where it runs | Inside `NetworkGuardian._check_dpi`, on every captured packet | Inside `NetworkGuardian._check_dpi`, on every captured packet | Standalone script only — not imported by `main.py` |
+| Signature set | `admin`, `password`, `etc/passwd`, `select * from` | `' OR '1'='1`, `UNION SELECT`, `<script>`, `../../`, `etc/passwd`, `cmd.exe`, `; whoami` | Same as the live C engine (fixed in `dpi.c`) |
+| Purpose | Real-time keyword/credential-leak alerting | Real-time injection-pattern alerting (SQLi, XSS, path traversal, cmd injection) | Measuring native-C vs. pure-Python throughput on synthetic payloads |
+| Required? | Recommended (`pip install pyahocorasick`); falls back to pure Python if missing | Optional — compile with `make -C c_src`; NetGuard runs on Aho-Corasick alone if the shared library isn't present | N/A — dev/benchmarking tool only |
 
-**In short:** the "8x–10x faster" numbers below describe the C extension in isolation, not a speedup you currently get in the live NIDS — the live path runs on Aho-Corasick. Wiring the C engine into `_check_dpi` (via the same `ctypes` binding used in `benchmark_dpi.py`) is a natural next step if you want the benchmarked throughput in production.
+**In short:** the 8x–10x acceleration numbers below are a controlled, isolated measurement of the C engine's throughput on synthetic payloads — they describe the engine's capability, not a claim about end-to-end NIDS throughput (which also includes Scapy capture, queueing, and the Aho-Corasick pass). Build `libdpi` (`make -C c_src`) before running `main.py` to get the C-accelerated injection-signature detection live; without it, NetGuard still runs correctly on Aho-Corasick alone.
 
 ---
 
-## 🏎️ DPI Native C Engine Performance (Benchmark Only)
+## 🏎️ DPI Native C Engine Performance
 
 - **Batch Processing & Bounds-Checked Safety** — By eliminating Python FFI execution overhead and passing contiguous memory blocks directly to native C primitives, payload scanning avoids GIL bottlenecks. The engine uses bounds-checked `memchr`/`memcmp` scanning to prevent Out-Of-Bounds reads and Null-Byte truncation issues on raw binary network traffic.
 - **Micro-Benchmark Results (100,000 Packets Evaluation)**:
@@ -161,13 +162,13 @@ NetGuard/
 
 | Domain | Feature | Status | Description | Performance Indicator |
 | :--- | :--- | :---: | :--- | :--- |
-| 📡 **Network** | Real-time L2-L7 Sniffing | ✅ | Real-time capture and analysis of IP, TCP, UDP, and DNS traffic while preventing memory overflow (`store=0`). | Zero-copy capture, O(1) enqueue |
+| 📡 **Network** | Real-time L3-L7 Sniffing | ✅ | Real-time capture and analysis of IP, TCP, UDP, and DNS traffic while preventing memory overflow (`store=0`). | Bounded memory capture (no packet buffering), O(1) enqueue |
 | 🛡️ **Cyber Security** | Sliding-Window & Stealth Detection | ✅ | Detects **DoS (SYN Flood)**, standard port scans, and **Stealth Scans (NULL, FIN, XMAS)** via moving time windows. | O(1) queue operations |
 | 🧬 **DNS Security** | DNS Tunneling Detection | ✅ | Shannon Entropy calculation & query length evaluation to catch exfiltration over DNS. | O(N) entropy check |
 | ⚡ **Active Defense** | Dynamic IP Isolation & OS Firewall | ✅ | Active mitigation mechanism that dynamically injects OS firewall rules (`netsh` / `iptables`) to block malicious hosts upon threshold breach. | Non-blocking async execution, O(1) blacklist check |
-| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Byte-level payload scanning via an **Aho-Corasick automaton** in the live pipeline (with a pure-Python fallback); a separate **Native C Extension** exists for offline throughput benchmarking. | O(N+M) string matching (live); 8x native acceleration measured in isolation |
+| 🔍 **DPI Engine** | Deep Packet Inspection | ✅ | Dual-layer L7 payload scanning: an **Aho-Corasick automaton** for keyword signatures, plus a **Native C Extension** (loaded live via `ctypes`) for bounds-checked injection-pattern signatures. Falls back to Aho-Corasick alone if the C library isn't compiled. | O(N+M) string matching; native C path measured at ~8x throughput vs. pure Python in isolation |
 | ⚙️ **Architecture** | Producer-Consumer & Thread-Safety | ✅ | Bounded `Queue`, `threading.Lock` primitives, and a dedicated background Garbage Collector thread to prevent memory leaks. | Bounded queue, backpressure-safe |
-| 📊 **Observability & IaC** | Dashboard as Code (Grafana + Loki) | ✅ | Five pre-defined dashboards in standard JSON format, automatically loaded on container startup via Provisioning files. | Instant provisioning on boot |
+| 📊 **Observability & IaC** | Dashboard as Code (Grafana + Loki) | ✅ | A single all-in-one "NetGuard Security Overview" dashboard in standard JSON format, automatically loaded on container startup via Provisioning files. | Instant provisioning on boot |
 | 📝 **Logging** | Structured JSON Dual-Stream | ✅ | Colorized console output alongside structured JSON log writes (`logs/network_security.json`), tailored for collection by Promtail. | Low-overhead async writes |
 | 🧪 **Testing** | Traffic Attack Simulator | ✅ | Simulation script (`test_attack.py`) that generates synthetic attack traffic to validate detection mechanisms. | Configurable synthetic load |
 
@@ -177,12 +178,12 @@ NetGuard/
 
 - **Python & Scapy** — Raw-socket-level packet capture, protocol parsing, and deep payload-level inspection (DPI).
 - **Aho-Corasick DPI (live)** — Multi-pattern automaton (`pyahocorasick`) used inside `main.py` for real-time keyword/signature matching against packet payloads, with a pure-Python substring fallback when the library is unavailable.
-- **Native C Extension (ctypes, benchmark-only)** — Batch-optimized, memory-safe C DPI engine invoked via `ctypes` from `benchmark_dpi.py`, delivering an **8x–10x** bounds-checked throughput acceleration over pure Python in isolated measurements. Not currently called from the live detection path.
+- **Native C Extension (ctypes, live)** — Batch-safe, memory-bounds-checked C DPI engine loaded via `ctypes` in `NetworkGuardian.__init__` and called on every packet's payload in `_check_dpi_native` alongside the Aho-Corasick pass, delivering **8x–10x** measured throughput over pure Python for its signature set. The same shared library is also loaded independently by `benchmark_dpi.py` for isolated throughput measurement. Requires `make -C c_src` first; NetGuard degrades gracefully to Aho-Corasick-only if the compiled library isn't present.
 - **Producer-Consumer Architecture** — Full separation between packet capture and analysis via `queue.Queue(maxsize=20000)`, preventing packet loss under load.
 - **Thread-Safety & Active Defense** — Whitelist/Blacklist state management guarded by `threading.Lock` to prevent data races, integrated with background dynamic OS Firewall rule injection (`netsh` / `iptables`).
 - **Background Garbage Collector** — A dedicated background thread that cleans up stale data structures (Sliding Window History & Blacklist) from memory every 30 seconds, synchronously and thread-safely, ensuring zero memory leaks from dormant IP addresses.
 - **Promtail & Grafana Loki** — Shipping of structured JSON logs from the local logs directory and indexing them in Loki.
-- **Dashboards as Code (IaC)** — Full version control of 5 dashboards in Git under `grafana/dashboards/`, automatically loaded into Grafana on container startup.
+- **Dashboards as Code (IaC)** — The "NetGuard Security Overview" dashboard is version-controlled in Git under `grafana/dashboards/`, automatically loaded into Grafana on container startup.
 - **Docker Compose Stack** — One-click deployment of the entire observability infrastructure.
 
 ---
@@ -192,7 +193,7 @@ NetGuard/
 - **Git** — Required to clone the repository.
 - **Docker & Docker Compose** — For running Loki, Promtail, and Grafana.
 - **Python 3.10+** — Required for running the NIDS engine and test suite.
-- **GCC / Make** — Required for compiling the native C DPI benchmark shared object (`libdpi.so` on Linux, `libdpi.dylib` on macOS, `libdpi.dll` on Windows) — only needed if you want to run `benchmark_dpi.py`.
+- **GCC / Make** — Required to compile the native C DPI engine shared object (`libdpi.so` on Linux, `libdpi.dylib` on macOS, `libdpi.dll` on Windows). Recommended before running `main.py`, since it's now loaded live for injection-signature detection; also used to run `benchmark_dpi.py`. NetGuard still runs correctly on Aho-Corasick alone if you skip this.
 - **`pyahocorasick`** — Optional but recommended for the live DPI engine's full performance; a pure-Python fallback is used automatically if it's not installed.
 - **Administrator / Root Privileges** — Required to capture raw socket traffic via Scapy and inject OS Firewall blocking rules (or use the least-privilege `setcap` option below on Linux).
 - **Npcap (Windows only)** — Required for Scapy to capture raw packets on Windows network adapters.
@@ -235,10 +236,13 @@ python -m venv .venv
 source .venv/bin/activate    # On Linux/Mac
 pip install -r requirements.txt
 
-# 5. (Optional) Compile the Native C DPI Benchmark & Run It
-# Note: this is a standalone throughput comparison, not required to run the live NIDS.
+# 5. Compile the Native C DPI Engine (recommended)
+# main.py auto-detects and loads this at startup for live injection-signature
+# detection; if you skip this step NetGuard still runs fine on Aho-Corasick alone.
 make -C c_src                                                # Linux / macOS
 gcc -shared -O3 -march=native -o libdpi.dll c_src/dpi.c      # Windows — requires MinGW/MSYS2 installed
+
+# Optional: run the standalone throughput benchmark (same shared library, isolated measurement)
 python benchmark_dpi.py                                      # Verify ~8x memory-safe speedup
 ```
 
