@@ -29,12 +29,16 @@ c_lib.inspect_batch.restype = ctypes.c_int
 
 # ---------------------------------------------------------------------------
 # 2. Pure Python Engine Implementation
+#
+# NOTE: kept in sync with the SIGNATURES array in c_src/dpi.c. "../../" (6
+# bytes) is used instead of "../" (3 bytes) — short substrings risk matching
+# by chance inside high-entropy binary/encrypted payloads.
 # ---------------------------------------------------------------------------
 SIGNATURES_PY = [
     b"' OR '1'='1",
     b"UNION SELECT",
     b"<script>",
-    b"../",
+    b"../../",
     b"etc/passwd",
     b"cmd.exe",
 ]

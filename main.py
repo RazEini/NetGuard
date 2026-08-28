@@ -1,13 +1,16 @@
+import ctypes
 import math
 import json
 import logging
 import os
 import platform
 import subprocess
+import sys
 import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
+from pathlib import Path
 from queue import Queue, Empty
 from scapy.all import sniff, IP, TCP, UDP, Raw, DNSQR
 
@@ -92,7 +95,7 @@ def calculate_entropy(text: str) -> float:
     frequencies = defaultdict(int)
     for char in text:
         frequencies[char] += 1
-    
+
     entropy = 0.0
     for count in frequencies.values():
         p = count / text_len
@@ -119,6 +122,76 @@ def block_ip_firewall_async(ip: str):
     threading.Thread(target=_block, daemon=True).start()
 
 
+# ---------------------------------------------------------------------------
+# DPI eligibility filtering
+#
+# Substring-based DPI (both Aho-Corasick and the native C engine) is only
+# meaningful on plaintext payloads. Running it against encrypted traffic
+# (TLS, SSH, etc.) wastes CPU and — worse — can produce false positives,
+# since high-entropy encrypted bytes can coincidentally match a short
+# signature. We filter on two cheap heuristics before calling either engine:
+#   1. Skip well-known encrypted/binary ports.
+#   2. Skip payloads that don't look like mostly-printable ASCII text.
+# ---------------------------------------------------------------------------
+COMMON_ENCRYPTED_PORTS = {443, 8443, 465, 993, 995, 636, 22, 3389}
+
+
+def _looks_like_plaintext(payload: bytes, sample_size: int = 32, min_printable_ratio: float = 0.85) -> bool:
+    if not payload:
+        return False
+    sample = payload[:sample_size]
+    printable = sum(1 for b in sample if 32 <= b <= 126 or b in (9, 10, 13))
+    return (printable / len(sample)) >= min_printable_ratio
+
+
+# ---------------------------------------------------------------------------
+# Native C DPI Engine (optional, loaded lazily)
+#
+# Mirrors the ctypes binding used in benchmark_dpi.py, but wired into the
+# live detection path here. If libdpi.so/.dll hasn't been compiled yet
+# (see c_src/Makefile), the engine degrades gracefully: NetGuard still runs
+# with the Aho-Corasick engine alone and logs a note explaining why.
+# ---------------------------------------------------------------------------
+
+# Must stay in sync with the SIGNATURES array in c_src/dpi.c — used only to
+# turn the matched index back into a human-readable name for logging.
+NATIVE_SIGNATURE_NAMES = [
+    "' OR '1'='1",
+    "UNION SELECT",
+    "<script>",
+    "../../",
+    "etc/passwd",
+    "cmd.exe",
+]
+
+
+def _load_c_dpi_engine(logger: logging.Logger):
+    base_dir = Path(__file__).parent.resolve()
+    lib_filename = "libdpi.dll" if sys.platform == "win32" else "libdpi.so"
+    lib_path = base_dir / lib_filename
+
+    if not lib_path.exists():
+        logger.info(
+            f"[+] Note: '{lib_filename}' not found. Native C DPI engine disabled "
+            f"(run 'make -C c_src' to build it). Falling back to Aho-Corasick only."
+        )
+        return None
+
+    try:
+        lib = ctypes.CDLL(str(lib_path))
+        lib.inspect_payload_index.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        lib.inspect_payload_index.restype = ctypes.c_int
+        logger.info("[+] Native C DPI Engine loaded successfully (libdpi).")
+        return lib
+    except (OSError, AttributeError) as e:
+        logger.warning(
+            f"[!] Failed to load native C DPI engine: {e}. "
+            f"If you compiled an older libdpi without inspect_payload_index, rebuild via 'make -C c_src'. "
+            f"Falling back to Aho-Corasick only."
+        )
+        return None
+
+
 class NetworkGuardian:
     def __init__(self, dos_threshold=500, scan_threshold=50, time_window_sec=10, cleanup_interval_sec=30):
         self.logger = setup_logger()
@@ -137,6 +210,7 @@ class NetworkGuardian:
         self.syn_history = defaultdict(lambda: deque(maxlen=1000))
         self.port_history = defaultdict(lambda: deque(maxlen=1000))
 
+        # Layer-7 keyword signatures (matched by the Aho-Corasick engine below)
         self.suspicious_keywords = [b"admin", b"password", b"etc/passwd", b"select * from"]
 
         if HAS_AHOCORASICK:
@@ -150,6 +224,11 @@ class NetworkGuardian:
         else:
             self.automaton = None
             self.logger.info("[+] Note: 'pyahocorasick' library not found. Falling back to native bytes searching.")
+
+        # Native C engine: bounds-checked signature scan for injection-style
+        # attacks (SQLi, XSS, path traversal, command injection). Runs
+        # alongside, not instead of, the Aho-Corasick keyword scan above.
+        self.c_dpi = _load_c_dpi_engine(self.logger)
 
     def _is_blacklisted(self, src_ip, now):
         """Must be called inside lock."""
@@ -206,10 +285,11 @@ class NetworkGuardian:
                 for ip in expired:
                     del self.blacklist[ip]
 
-    def _check_dpi(self, payload: bytes, src_ip: str):
+    def _check_dpi_keywords(self, payload: bytes, src_ip: str):
+        """Aho-Corasick (or pure-Python fallback) keyword scan."""
         payload_str = payload.decode('utf-8', errors='ignore').lower()
         matched_keywords = set()
-        
+
         if self.automaton:
             for end_index, (idx, kw_bytes) in self.automaton.iter(payload_str):
                 matched_keywords.add(kw_bytes.decode('utf-8', errors='ignore'))
@@ -224,6 +304,28 @@ class NetworkGuardian:
                 f"[SECURITY DPI] Suspicious keyword '{kw_str}' from {src_ip}",
                 extra={"src_ip": src_ip, "event_type": "DPI_ALERT", "details": f"Keyword match: {kw_str}"}
             )
+
+    def _check_dpi_native(self, payload: bytes, src_ip: str):
+        """Native C signature scan (SQLi / XSS / path traversal / cmd injection)."""
+        if self.c_dpi is None:
+            return
+
+        try:
+            idx = self.c_dpi.inspect_payload_index(payload, len(payload))
+        except Exception as e:
+            self.logger.debug(f"[DPI-C] Native engine call failed: {e}")
+            return
+
+        if idx is not None and idx >= 0:
+            sig_name = NATIVE_SIGNATURE_NAMES[idx] if idx < len(NATIVE_SIGNATURE_NAMES) else f"index {idx}"
+            self.logger.warning(
+                f"[SECURITY DPI-C] Native signature match '{sig_name}' from {src_ip}",
+                extra={"src_ip": src_ip, "event_type": "DPI_ALERT_NATIVE", "details": f"Native C signature match: {sig_name}"}
+            )
+
+    def _check_dpi(self, payload: bytes, src_ip: str):
+        self._check_dpi_keywords(payload, src_ip)
+        self._check_dpi_native(payload, src_ip)
 
     def analyze_packet(self, pkt):
         now = datetime.now()
@@ -242,7 +344,7 @@ class NetworkGuardian:
                 if query and not query.endswith(".local"):
                     subdomain = query.split('.')[0]
                     entropy = calculate_entropy(subdomain)
-                    
+
                     if len(subdomain) > 45 or entropy > 4.3:
                         self.logger.warning(
                             f"[DNS TUNNELING SUSPECT] Host {src_ip} query len={len(query)} entropy={entropy:.2f}: {query}",
@@ -262,7 +364,7 @@ class NetworkGuardian:
         if pkt.haslayer(TCP):
             dst_port = pkt[TCP].dport
             tcp_flags = int(pkt[TCP].flags)
-            
+
             if tcp_flags & 0x02:  # SYN Flag
                 is_syn = True
 
@@ -320,9 +422,14 @@ class NetworkGuardian:
                     )
                     ports_deque.clear()
 
-        # 4. Deep Packet Inspection (DPI)
+        # 4. Deep Packet Inspection (DPI) — Aho-Corasick keywords + Native C signatures.
+        # Skipped for well-known encrypted ports and non-plaintext-looking payloads,
+        # since substring DPI over encrypted/binary bytes is both wasted work and a
+        # false-positive risk.
         if pkt.haslayer(Raw):
-            self._check_dpi(pkt[Raw].load, src_ip)
+            payload = pkt[Raw].load
+            if dst_port not in COMMON_ENCRYPTED_PORTS and _looks_like_plaintext(payload):
+                self._check_dpi(payload, src_ip)
 
     def packet_worker(self):
         while not self.stop_event.is_set():

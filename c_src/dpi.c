@@ -12,11 +12,18 @@ typedef struct {
     size_t len;
 } Signature;
 
+/*
+ * NOTE on signature lengths: DPI over raw/encrypted traffic risks false
+ * positives when a signature is short enough to appear by chance in
+ * high-entropy (e.g. TLS-encrypted) byte streams. "../" at 3 bytes was too
+ * short for this; "../../" at 6 bytes is a much safer minimum. As a rule of
+ * thumb, avoid substring signatures under ~5-6 bytes for byte-level scanning.
+ */
 static const Signature SIGNATURES[] = {
     {"' OR '1'='1", 11},
     {"UNION SELECT", 12},
     {"<script>",     8},
-    {"../",          3},
+    {"../../",       6},
     {"etc/passwd",  10},
     {"cmd.exe",      7},
     {NULL,          0}
@@ -48,15 +55,24 @@ static inline int safe_payload_contains(const char *payload, size_t payload_len,
     return 0;
 }
 
-EXPORT int inspect_payload(const char* payload, int payload_len) {
-    if (!payload || payload_len <= 0) return 0;
+/*
+ * Returns the index into SIGNATURES of the first matching pattern, or -1
+ * if none matched. Lets callers (e.g. main.py) log exactly which signature
+ * fired instead of a generic "match" — useful for debugging false positives.
+ */
+EXPORT int inspect_payload_index(const char* payload, int payload_len) {
+    if (!payload || payload_len <= 0) return -1;
 
     for (int i = 0; SIGNATURES[i].pattern != NULL; i++) {
         if (safe_payload_contains(payload, (size_t)payload_len, SIGNATURES[i].pattern, SIGNATURES[i].len)) {
-            return 1;
+            return i;
         }
     }
-    return 0;
+    return -1;
+}
+
+EXPORT int inspect_payload(const char* payload, int payload_len) {
+    return inspect_payload_index(payload, payload_len) >= 0 ? 1 : 0;
 }
 
 EXPORT int inspect_batch(const char** payloads, const int* lengths, int count, int* results) {
