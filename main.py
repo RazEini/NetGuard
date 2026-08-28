@@ -162,6 +162,7 @@ NATIVE_SIGNATURE_NAMES = [
     "../../",
     "etc/passwd",
     "cmd.exe",
+    "; whoami",
 ]
 
 

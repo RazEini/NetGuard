@@ -41,6 +41,7 @@ SIGNATURES_PY = [
     b"../../",
     b"etc/passwd",
     b"cmd.exe",
+    b"; whoami",
 ]
 
 

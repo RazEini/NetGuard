@@ -26,6 +26,7 @@ static const Signature SIGNATURES[] = {
     {"../../",       6},
     {"etc/passwd",  10},
     {"cmd.exe",      7},
+    {"; whoami",     8},
     {NULL,          0}
 };
 
