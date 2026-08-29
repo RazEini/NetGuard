@@ -205,7 +205,6 @@ class NetworkGuardian:
         self.TIME_WINDOW = timedelta(seconds=time_window_sec)
         self.CLEANUP_INTERVAL = cleanup_interval_sec
 
-        self.whitelist = set()
         self.blacklist = {}  # {ip: unblock_time}
 
         self.syn_history = defaultdict(lambda: deque(maxlen=1000))
@@ -247,9 +246,6 @@ class NetworkGuardian:
 
         src_ip = pkt[IP].src
         now = datetime.now()
-
-        if src_ip in self.whitelist:
-            return
 
         with self.lock:
             if self._is_blacklisted(src_ip, now):
@@ -333,7 +329,7 @@ class NetworkGuardian:
         src_ip = pkt[IP].src
 
         with self.lock:
-            if src_ip in self.whitelist or self._is_blacklisted(src_ip, now):
+            if self._is_blacklisted(src_ip, now):
                 return
 
         # 1. DNS Inspection & Tunneling Detection
