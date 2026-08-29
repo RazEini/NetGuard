@@ -197,7 +197,7 @@ Standard domain names exhibit predictable natural-language patterns, whereas enc
 - **Mathematical Model:**
   Calculates Shannon Entropy $H(X)$ over the unique byte/character distribution of each query string:
   $$H(X) = -\sum_{i=1}^{n} P(x_i) \log_2 P(x_i)$$
-- **Detection Threshold:** Queries exceeding the configured threshold ($H(X) > 4.2$) alongside anomalous string lengths trigger an immediate **DNS Tunneling Alert** and log entry.
+- **Detection Threshold:** Queries exceeding the configured threshold ($H(X) > 4.3$) alongside anomalous string lengths trigger an immediate **DNS Tunneling Alert** and log entry.
 
 ---
 
