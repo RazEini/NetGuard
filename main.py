@@ -53,7 +53,7 @@ class ColoredConsoleFormatter(logging.Formatter):
 class JsonFileFormatter(logging.Formatter):
     def format(self, record):
         log_record = {
-            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created).astimezone().isoformat(),
             "level": record.levelname,
             "message": str(record.getMessage()),
             "logger": record.name
@@ -166,9 +166,18 @@ NATIVE_SIGNATURE_NAMES = [
 ]
 
 
+def _get_lib_filename() -> str:
+    if sys.platform == "win32":
+        return "libdpi.dll"
+    elif sys.platform == "darwin":
+        return "libdpi.dylib"
+    else:
+        return "libdpi.so"
+
+
 def _load_c_dpi_engine(logger: logging.Logger):
     base_dir = Path(__file__).parent.resolve()
-    lib_filename = "libdpi.dll" if sys.platform == "win32" else "libdpi.so"
+    lib_filename = _get_lib_filename()
     lib_path = base_dir / lib_filename
 
     if not lib_path.exists():

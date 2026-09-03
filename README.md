@@ -98,7 +98,7 @@ NetGuard runs **two DPI engines together** in the live pipeline (`main.py`), eac
 | Purpose | Real-time keyword/credential-leak alerting | Real-time injection-pattern alerting (SQLi, XSS, path traversal, cmd injection) | Measuring native-C vs. pure-Python throughput on synthetic payloads |
 | Required? | Recommended (`pip install pyahocorasick`); falls back to pure Python if missing | Optional — compile with `make -C c_src`; NetGuard runs on Aho-Corasick alone if the shared library isn't present | N/A — dev/benchmarking tool only |
 
-**In short:** the 8x–10x acceleration numbers below are a controlled, isolated measurement of the C engine's throughput on synthetic payloads — they describe the engine's capability, not a claim about end-to-end NIDS throughput (which also includes Scapy capture, queueing, and the Aho-Corasick pass). Build `libdpi` (`make -C c_src`) before running `main.py` to get the C-accelerated injection-signature detection live; without it, NetGuard still runs correctly on Aho-Corasick alone.
+**In short:** the ~8x acceleration number below is a controlled, isolated measurement of the C engine's throughput on synthetic payloads — it describes the engine's capability, not a claim about end-to-end NIDS throughput (which also includes Scapy capture, queueing, and the Aho-Corasick pass). Build `libdpi` (`make -C c_src`) before running `main.py` to get the C-accelerated injection-signature detection live; without it, NetGuard still runs correctly on Aho-Corasick alone.
 
 ---
 
@@ -178,7 +178,7 @@ NetGuard/
 
 - **Python & Scapy** — Raw-socket-level packet capture, protocol parsing, and deep payload-level inspection (DPI).
 - **Aho-Corasick DPI (live)** — Multi-pattern automaton (`pyahocorasick`) used inside `main.py` for real-time keyword/signature matching against packet payloads, with a pure-Python substring fallback when the library is unavailable.
-- **Native C Extension (ctypes, live)** — Batch-safe, memory-bounds-checked C DPI engine loaded via `ctypes` in `NetworkGuardian.__init__` and called on every packet's payload in `_check_dpi_native` alongside the Aho-Corasick pass, delivering **8x–10x** measured throughput over pure Python for its signature set. The same shared library is also loaded independently by `benchmark_dpi.py` for isolated throughput measurement. Requires `make -C c_src` first; NetGuard degrades gracefully to Aho-Corasick-only if the compiled library isn't present.
+- **Native C Extension (ctypes, live)** — Batch-safe, memory-bounds-checked C DPI engine loaded via `ctypes` in `NetworkGuardian.__init__` and called on every packet's payload in `_check_dpi_native` alongside the Aho-Corasick pass, delivering **~8x** (7.94x measured) throughput over pure Python for its signature set. The same shared library is also loaded independently by `benchmark_dpi.py` for isolated throughput measurement. Requires `make -C c_src` first; NetGuard degrades gracefully to Aho-Corasick-only if the compiled library isn't present.
 - **Producer-Consumer Architecture** — Full separation between packet capture and analysis via `queue.Queue(maxsize=20000)`, preventing packet loss under load.
 - **Thread-Safety & Active Defense** — Whitelist/Blacklist state management guarded by `threading.Lock` to prevent data races, integrated with background dynamic OS Firewall rule injection (`netsh` / `iptables`).
 - **Background Garbage Collector** — A dedicated background thread that cleans up stale data structures (Sliding Window History & Blacklist) from memory every 30 seconds, synchronously and thread-safely, ensuring zero memory leaks from dormant IP addresses.
@@ -197,7 +197,7 @@ Standard domain names exhibit predictable natural-language patterns, whereas enc
 - **Mathematical Model:**
   Calculates Shannon Entropy $H(X)$ over the unique byte/character distribution of each query string:
   $$H(X) = -\sum_{i=1}^{n} P(x_i) \log_2 P(x_i)$$
-- **Detection Threshold:** Queries exceeding the configured threshold ($H(X) > 4.2$) alongside anomalous string lengths trigger an immediate **DNS Tunneling Alert** and log entry.
+- **Detection Threshold:** Queries exceeding the configured threshold ($H(X) > 4.3$) alongside anomalous string lengths trigger an immediate **DNS Tunneling Alert** and log entry.
 
 ---
 
@@ -217,7 +217,7 @@ Standard domain names exhibit predictable natural-language patterns, whereas enc
 
 ```json
 {
-  "timestamp": "2026-08-06T10:30:15.123456",
+  "timestamp": "2026-08-06T10:30:15.123456+03:00",
   "level": "WARNING",
   "message": "[PORT SCAN DETECTED] Host 10.0.0.4 scanned 18 unique ports",
   "logger": "NetworkGuardian",

@@ -8,8 +8,17 @@ import time
 # ---------------------------------------------------------------------------
 # 1. Load Native C Extension
 # ---------------------------------------------------------------------------
+def _get_lib_filename() -> str:
+    if sys.platform == "win32":
+        return "libdpi.dll"
+    elif sys.platform == "darwin":
+        return "libdpi.dylib"
+    else:
+        return "libdpi.so"
+
+
 BASE_DIR = Path(__file__).parent.resolve()
-lib_filename = "libdpi.dll" if sys.platform == "win32" else "libdpi.so"
+lib_filename = _get_lib_filename()
 lib_path = BASE_DIR / lib_filename
 
 if not lib_path.exists():
